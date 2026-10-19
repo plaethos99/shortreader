@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { getReadingMode } from '@/services/readingMode';
 
 import {
   BookContent,
@@ -344,9 +345,13 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
             syncing: false,
             gridInsets: null,
             previewMode: false,
-            // Readster: every open lands in the curated feed. The original book
-            // is a side door for the session, not a choice that sticks.
-            viewSettings: { ...globalViewSettings, ...configViewSettings, scrollFeed: true },
+            // ShortReader: each book opens the way the reader chose for it
+            // (asked on first open by ReadingModeChooser, remembered per book).
+            viewSettings: {
+              ...globalViewSettings,
+              ...configViewSettings,
+              scrollFeed: getReadingMode(id) === 'curated',
+            },
           },
         },
       }));

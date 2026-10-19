@@ -3,6 +3,8 @@ import { useCallback } from 'react';
 import { useEnv } from '@/context/EnvContext';
 import { useReaderStore } from '@/store/readerStore';
 import { saveViewSettings } from '@/helpers/settings';
+import { setReadingMode } from '@/services/readingMode';
+import { useBookDataStore } from '@/store/bookDataStore';
 
 /**
  * The per-book curated-feed switch, shared by every control that flips it.
@@ -32,6 +34,9 @@ export const useScrollFeedSetting = (bookKey: string) => {
       // Per book, and without a restyle: the feed is its own overlay, not a
       // change to how the book itself is laid out.
       saveViewSettings(envConfig, bookKey, 'scrollFeed', next, true, false);
+      // Remembered per book: the book opens this way next time.
+      const hash = useBookDataStore.getState().getBookData(bookKey)?.book?.hash;
+      if (hash) setReadingMode(hash, next ? 'curated' : 'original');
       viewSettings.scrollFeed = next;
       setViewSettings(bookKey, { ...viewSettings });
     },

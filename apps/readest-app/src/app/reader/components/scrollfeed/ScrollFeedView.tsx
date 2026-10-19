@@ -44,6 +44,7 @@ import { useReadingStats } from '../ambience/useReadingStats';
 import AudioStoryPanel from './AudioStoryPanel';
 import ChapterEndCard from './ChapterEndCard';
 import ChapterPicker from './ChapterPicker';
+import FeedWindowBar, { FEED_WINDOW_BAR_HEIGHT, useHasFeedWindowBar } from './FeedWindowBar';
 import { useEnv } from '@/context/EnvContext';
 import { useFeedReadAlong } from './useFeedReadAlong';
 import { useFeedLanguage } from './useFeedLanguage';
@@ -84,6 +85,7 @@ interface ScrollFeedViewProps {
   bookDoc: BookDoc;
   bookTitle: string;
   contentInsets: { top: number; right: number; bottom: number; left: number };
+  onCloseBook: (bookKey: string) => void;
 }
 
 const ScrollFeedView: React.FC<ScrollFeedViewProps> = ({
@@ -91,8 +93,22 @@ const ScrollFeedView: React.FC<ScrollFeedViewProps> = ({
   bookHash,
   bookDoc,
   bookTitle,
-  contentInsets,
+  contentInsets: readerInsets,
+  onCloseBook,
 }) => {
+  // Desktop: the feed's own window bar sits above everything, so the feed
+  // starts below it (see FeedWindowBar).
+  const hasWindowBar = useHasFeedWindowBar();
+  const contentInsets = useMemo(
+    () =>
+      hasWindowBar
+        ? { ...readerInsets, top: readerInsets.top + FEED_WINDOW_BAR_HEIGHT }
+        : readerInsets,
+    [hasWindowBar, readerInsets],
+  );
+  const windowBar = hasWindowBar && (
+    <FeedWindowBar title={bookTitle} onClose={() => onCloseBook(bookKey)} />
+  );
   const { setEnabled } = useScrollFeedSetting(bookKey);
   const [chapters, setChapters] = useState<FeedChapter[]>([]);
   const [selected, setSelected] = useState<FeedChapter | null>(null);
@@ -381,6 +397,7 @@ const ScrollFeedView: React.FC<ScrollFeedViewProps> = ({
   // canvas is positioned (`relative`).
   const shell = (children: React.ReactNode, scroll = false) => (
     <div className='bg-base-100 absolute inset-0 z-10' style={insetStyle}>
+      {windowBar}
       <AmbientBackground backdrop={effective.backdrop} palette={ambience.palette} />
       {scroll ? <div className='relative h-full overflow-y-auto'>{children}</div> : children}
     </div>
@@ -389,6 +406,7 @@ const ScrollFeedView: React.FC<ScrollFeedViewProps> = ({
   if (error && !selected) {
     return (
       <div className='bg-base-100 absolute inset-0 z-10 overflow-y-auto' style={insetStyle}>
+        {windowBar}
         {/* The way out matters most here: a feed that cannot be generated is a
             blank screen where the book should be. */}
         <div className='mx-auto max-w-2xl p-6'>

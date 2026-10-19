@@ -17,7 +17,9 @@ import BooknotesNav from './sidebar/BooknotesNav';
 import FoliateViewer from './FoliateViewer';
 import PdfReflowView from './PdfReflowView';
 import ScrollFeedView from './scrollfeed/ScrollFeedView';
-import { isScrollFeedConfigured } from '@/services/scrollfeed/generate';
+import { getReadingMode, setReadingMode, type ReadingMode } from '@/services/readingMode';
+import { useScrollFeedSetting } from '../hooks/useScrollFeedSetting';
+import ReadingModeChooser from './ReadingModeChooser';
 import SectionInfo from './SectionInfo';
 import HeaderBar from './HeaderBar';
 import PageNavigationButtons from './PageNavigationButtons';
@@ -138,6 +140,23 @@ const BookCellInner: React.FC<BookCellProps> = ({
     [bookKey, setDropdownOpenForBook],
   );
 
+  // First open of a book: ask how to read it (original or curated view).
+  const { setEnabled: setScrollFeed } = useScrollFeedSetting(bookKey);
+  const bookHash = book?.hash;
+  // Derived from the book, not captured once: its data can arrive after the
+  // first render.
+  const savedMode = useMemo(() => (bookHash ? getReadingMode(bookHash) : null), [bookHash]);
+  const [choiceMade, setChoiceMade] = useState(false);
+  const needsModeChoice = !!bookHash && !savedMode && !choiceMade;
+  const chooseMode = useCallback(
+    (mode: ReadingMode) => {
+      if (bookHash) setReadingMode(bookHash, mode);
+      setScrollFeed(mode === 'curated');
+      setChoiceMade(true);
+    },
+    [bookHash, setScrollFeed],
+  );
+
   if (!book || !config || !bookDoc || !viewSettings || !viewState) return null;
 
   const { section, pageinfo, sectionLabel } = progress || {};
@@ -189,16 +208,24 @@ const BookCellInner: React.FC<BookCellProps> = ({
         {book.format === 'PDF' && viewSettings.pdfReflow && (
           <PdfReflowView bookKey={bookKey} bookDoc={bookDoc} contentInsets={contentInsets} />
         )}
-        {/* Gated on configuration as well as the setting: the feed defaults ON,
-            so without a key an unconfigured install would open every book to an
-            error overlay instead of the book. */}
-        {viewSettings.scrollFeed && isScrollFeedConfigured() && (
+        {needsModeChoice && (
+          <ReadingModeChooser
+            bookTitle={book.title}
+            topInset={screenInsets.top}
+            onChoose={chooseMode}
+            onCloseBook={() => onCloseBook(bookKey)}
+          />
+        )}
+        {/* Chosen by the reader, so shown even before AI is set up: the feed
+            then explains how to set it up, with a way back to the book. */}
+        {!needsModeChoice && viewSettings.scrollFeed && (
           <ScrollFeedView
             bookKey={bookKey}
             bookHash={book.hash}
             bookDoc={bookDoc}
             bookTitle={book.title}
             contentInsets={contentInsets}
+            onCloseBook={onCloseBook}
           />
         )}
         {viewSettings.vertical && viewSettings.scrolled && (
