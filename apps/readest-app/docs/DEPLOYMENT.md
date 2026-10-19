@@ -74,8 +74,9 @@ endpoint — pastes their own key and chooses any model the key can use. Keys ar
 kept on that device only and sent only to the chosen service.
 
 Pictures (mind maps, visuals, comics, feed pictures) come from **Google Flow**
-or **Grok Imagine**, the reader's choice, made in a real browser window where
-they are signed in. The image bridge drives it; see
+or **Grok Imagine**, the reader's choice, made in a real Edge or Chrome window
+where they sign in; the app opens it and waits for the sign-in by itself. Phones
+use the image bridge on a computer; see
 [`tools/image-bridge/README.md`](../../../tools/image-bridge/README.md).
 
 | Variable | What it does | Value |
@@ -377,11 +378,14 @@ Keep **Answer without thinking** on. Reasoning models otherwise think before
 every answer: for DeepSeek's flash model that was about 7k hidden tokens per
 chapter analysis, 64 s and roughly 4× the cost.
 
-### Pictures fail: "The image bridge is not running"
+### Pictures: a browser window opens
 
-Start it on the computer with `node tools/image-bridge/bridge.mjs`, open the
-provider from **Settings → AI Keys → Open**, sign in (for Flow, open a project),
-and press **Check**.
+That is by design. Google Flow and Grok Imagine have no API for this, so the
+desktop app (and the web app run on your own computer) opens the site in its
+own Edge or Chrome window. Sign in there once; the picture then starts by
+itself, and later pictures need no sign-in. Edge or Chrome must be installed.
+On a phone, pictures go through the image bridge on a computer:
+see `tools/image-bridge/README.md`.
 
 ### Gradle cannot find the SDK or NDK
 

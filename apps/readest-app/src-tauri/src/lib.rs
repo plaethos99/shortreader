@@ -43,6 +43,8 @@ mod pdf_parser;
 mod range_file;
 mod sentry_config;
 #[cfg(desktop)]
+mod image_browser;
+#[cfg(desktop)]
 mod spawn_fresh_browser;
 mod transfer_file;
 mod web_browser;
@@ -565,6 +567,8 @@ pub fn run() {
             localsend::commands::localsend_cancel_send,
             #[cfg(desktop)]
             spawn_fresh_browser::spawn_fresh_browser,
+            #[cfg(desktop)]
+            image_browser::launch_image_browser,
             nightly_update::verify_update_signature,
             #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             nightly_update::install_nightly_update,

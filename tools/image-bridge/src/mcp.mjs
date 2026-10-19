@@ -45,7 +45,7 @@ const TOOLS = [
 
 const callTool = async (name, args = {}) => {
   if (name === 'generate_image') {
-    const image = await generate(args);
+    const image = await generate(args, (status) => console.error(`[image-bridge] ${status}`));
     if (args.out_path) writeFileSync(args.out_path, image.data);
     return {
       content: [

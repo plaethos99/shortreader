@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'vitest';
 
-import { hasMath, mathToSpeech, renderMathText } from '@/utils/mathText';
+import {
+  hasMath,
+  mathToSpeech,
+  renderInlineMarkdownMath,
+  renderMarkdownMath,
+  renderMathText,
+} from '@/utils/mathText';
 
 describe('renderMathText', () => {
   test('leaves text without math as plain, escaped text', () => {
@@ -117,5 +123,46 @@ describe('mathToSpeech', () => {
 
   test('leaves text without math alone', () => {
     expect(mathToSpeech('Plain prose.')).toBe('Plain prose.');
+  });
+});
+
+describe('renderMarkdownMath', () => {
+  test('renders an AI reply’s Markdown: bold, lists, headings', () => {
+    const html = renderMarkdownMath('## Key ideas\n\n- **Speed** is distance\n- Time *matters*');
+
+    expect(html).toContain('<h2>Key ideas</h2>');
+    expect(html).toContain('<li><strong>Speed</strong> is distance</li>');
+    expect(html).toContain('<em>matters</em>');
+  });
+
+  test('keeps LaTeX out of the Markdown pass', () => {
+    const html = renderMarkdownMath('**Average speed:** $v_{avg} = \frac{d}{t}$ and $a_1 * b_2$');
+
+    expect(html).toContain('<strong>Average speed:</strong>');
+    expect(html.match(/<math/g)).toHaveLength(2);
+    expect(html).not.toContain('MATHSLOT');
+    expect(html).not.toContain('<em>');
+  });
+
+  test('drops scripts and links from model output', () => {
+    const html = renderMarkdownMath('Hi <script>alert(1)</script> [x](javascript:alert(1))');
+
+    expect(html).not.toContain('<script');
+    expect(html).not.toContain('<a');
+    expect(html).not.toContain('javascript:');
+  });
+});
+
+describe('renderInlineMarkdownMath', () => {
+  test('applies inline marks without wrapping in a paragraph', () => {
+    expect(renderInlineMarkdownMath('A **bold** theme')).toBe('A <strong>bold</strong> theme');
+  });
+});
+
+describe('mathToSpeech and Markdown', () => {
+  test('does not read Markdown marks aloud', () => {
+    expect(mathToSpeech('## Ideas\n- **Speed** is `fast`\n1. Then *time*')).toBe(
+      'Ideas\nSpeed is fast\nThen time',
+    );
   });
 });

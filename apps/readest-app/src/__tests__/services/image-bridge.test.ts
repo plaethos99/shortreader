@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { DEFAULT_AI_CONFIG, useAIConfigStore } from '@/services/byok/aiConfig';
-import { bridgeStatus, generateImage } from '@/services/imageBridge';
+import { generateImage, imageRoute, imageStatus } from '@/services/imageBridge';
 
 const fetchMock = vi.fn();
 
-describe('image bridge client', () => {
+describe('image bridge client (phones)', () => {
+  test('a copy that is neither the desktop nor the web app uses the bridge', () => {
+    expect(imageRoute()).toBe('bridge');
+  });
+
   beforeEach(() => {
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
@@ -47,6 +51,6 @@ describe('image bridge client', () => {
 
   test('says how to start the bridge when it is not running', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
-    await expect(bridgeStatus()).rejects.toThrow(/image bridge is not running/);
+    await expect(imageStatus()).rejects.toThrow(/Start the image bridge/);
   });
 });

@@ -1,28 +1,28 @@
-# Readster builds for Windows, macOS and iOS, published to a GitHub Release.
+# ShortReader builds for Windows, macOS and iOS, published to a GitHub Release.
 #
 # Start a build by pushing a tag:
-#   git tag readster-v0.12.8-1 && git push origin readster-v0.12.8-1
+#   git tag shortreader-v0.1.0 && git push origin shortreader-v0.1.0
 # (or run it from the Actions tab once this file is on the default branch).
 #
 # Release assets:
-#   Readster_<tag>_x64-setup.exe     Windows installer
-#   Readster_<tag>_x64-portable.exe  Windows, runs without installing
-#   Readster_<tag>_universal.dmg     macOS (Intel and Apple Silicon), not
+#   ShortReader_<tag>_x64-setup.exe     Windows installer
+#   ShortReader_<tag>_x64-portable.exe  Windows, runs without installing
+#   ShortReader_<tag>_universal.dmg     macOS (Intel and Apple Silicon), not
 #                                    notarized: first open needs
-#                                    `xattr -cr /Applications/Readster.app`
-#   Readster_<tag>_unsigned.ipa      iOS, unsigned: sideload with Sideloadly or
+#                                    `xattr -cr /Applications/ShortReader.app`
+#   ShortReader_<tag>_unsigned.ipa      iOS, unsigned: sideload with Sideloadly or
 #                                    AltStore, which sign it with your Apple ID
 #
 # Needs no AI secrets: readers bring their own key in the app.
-name: Release Readster
+name: Release ShortReader
 
 on:
   push:
-    tags: ['readster-v*']
+    tags: ['shortreader-v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to build and publish (e.g. readster-v0.12.8-1)'
+        description: 'Release tag to build and publish (e.g. shortreader-v0.1.0)'
         required: true
 
 permissions:
@@ -41,7 +41,7 @@ jobs:
         run: |
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-              --prerelease --title "Readster $TAG" \
+              --prerelease --title "ShortReader $TAG" \
               --notes "Windows installer and portable app, a macOS dmg, and an unsigned iOS app for sideloading."
           fi
 
@@ -96,7 +96,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
         with:
-          key: readster-${{ matrix.platform }}-cargo
+          key: shortreader-${{ matrix.platform }}-cargo
 
       # The app reads these at build time (`pnpm build` loads .env.tauri).
       - name: write .env.tauri
@@ -114,9 +114,9 @@ jobs:
         working-directory: apps/readest-app
         run: |
           pnpm tauri build --target ${{ matrix.rust_target }} --bundles nsis \
-            --config src-tauri/readster.conf.json
+            --config src-tauri/shortreader.conf.json
           setup=$(find ../../target/${{ matrix.rust_target }}/release/bundle/nsis -name '*-setup.exe' | head -1)
-          cp "$setup" "../../Readster_${TAG}_x64-setup.exe"
+          cp "$setup" "../../ShortReader_${TAG}_x64-setup.exe"
 
       # Same app with NEXT_PUBLIC_PORTABLE_APP set: keeps its data beside the
       # exe instead of installing. The web UI is embedded in the exe, so this
@@ -127,15 +127,15 @@ jobs:
         run: |
           echo "NEXT_PUBLIC_PORTABLE_APP=true" >> .env.tauri
           pnpm tauri build --target ${{ matrix.rust_target }} --no-bundle \
-            --config src-tauri/readster.conf.json
+            --config src-tauri/shortreader.conf.json
           cp ../../target/${{ matrix.rust_target }}/release/readest.exe \
-            "../../Readster_${TAG}_x64-portable.exe"
+            "../../ShortReader_${TAG}_x64-portable.exe"
 
       - name: upload the Windows apps to the release
         if: matrix.platform == 'windows'
         run: |
-          gh release upload "$TAG" "Readster_${TAG}_x64-setup.exe" \
-            "Readster_${TAG}_x64-portable.exe" --clobber
+          gh release upload "$TAG" "ShortReader_${TAG}_x64-setup.exe" \
+            "ShortReader_${TAG}_x64-portable.exe" --clobber
 
       # ---------- macOS ----------
 
@@ -149,26 +149,26 @@ jobs:
         working-directory: apps/readest-app
         run: |
           pnpm tauri build --target universal-apple-darwin --bundles dmg \
-            --config src-tauri/readster.conf.json \
+            --config src-tauri/shortreader.conf.json \
             --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}'
           dmg=$(find ../../target/universal-apple-darwin/release/bundle/dmg -name '*.dmg' | head -1)
-          cp "$dmg" "../../Readster_${TAG}_universal.dmg"
+          cp "$dmg" "../../ShortReader_${TAG}_universal.dmg"
 
       - name: upload the macOS dmg to the release
         if: matrix.platform == 'macos'
-        run: gh release upload "$TAG" "Readster_${TAG}_universal.dmg" --clobber
+        run: gh release upload "$TAG" "ShortReader_${TAG}_universal.dmg" --clobber
 
       # ---------- iOS (unsigned) ----------
 
       # The Xcode project (src-tauri/gen/apple) is not in the repo, so it is
       # generated here. The overlay, copied to the iOS platform config Tauri
-      # merges on its own, names the app Readster for both init and build.
+      # merges on its own, names the app ShortReader for both init and build.
       - name: generate the iOS project
         if: matrix.platform == 'ios'
         working-directory: apps/readest-app
         run: |
           command -v xcodegen >/dev/null || brew install xcodegen
-          cp src-tauri/readster.conf.json src-tauri/tauri.ios.conf.json
+          cp src-tauri/shortreader.conf.json src-tauri/tauri.ios.conf.json
           rm -rf src-tauri/gen/apple
           pnpm tauri ios init --ci
 
@@ -198,8 +198,8 @@ jobs:
           echo "Packaging $app"
           rm -rf "$RUNNER_TEMP/Payload" && mkdir "$RUNNER_TEMP/Payload"
           cp -R "$app" "$RUNNER_TEMP/Payload/"
-          (cd "$RUNNER_TEMP" && zip -qry "$GITHUB_WORKSPACE/Readster_${TAG}_unsigned.ipa" Payload)
+          (cd "$RUNNER_TEMP" && zip -qry "$GITHUB_WORKSPACE/ShortReader_${TAG}_unsigned.ipa" Payload)
 
       - name: upload the iOS app to the release
         if: matrix.platform == 'ios'
-        run: gh release upload "$TAG" "Readster_${TAG}_unsigned.ipa" --clobber
+        run: gh release upload "$TAG" "ShortReader_${TAG}_unsigned.ipa" --clobber

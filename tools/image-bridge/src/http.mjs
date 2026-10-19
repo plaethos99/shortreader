@@ -86,7 +86,7 @@ export const startHttp = ({ port, host, log }) =>
         if (req.method === 'POST' && url.pathname === '/generate') {
           const body = await readJson(req);
           log(`${body.provider}: ${String(body.prompt ?? '').slice(0, 80)}…`);
-          const image = await generate(body);
+          const image = await generate(body, (status) => log(status));
           return reply(200, { mimeType: image.mimeType, data: image.data.toString('base64') });
         }
         return reply(404, { error: 'Not found' });

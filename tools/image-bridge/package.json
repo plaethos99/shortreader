@@ -13,6 +13,6 @@
     "mcp": "node bridge.mjs --mcp"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   }
 }

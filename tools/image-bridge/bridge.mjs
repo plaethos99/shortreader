@@ -9,9 +9,6 @@
  */
 import { readFileSync } from 'node:fs';
 
-import { startHttp } from './src/http.mjs';
-import { startMcp } from './src/mcp.mjs';
-
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 const mcp = process.argv.includes('--mcp');
 const port = Number(process.env.SHORTREADER_BRIDGE_PORT ?? 7531);
@@ -19,10 +16,15 @@ const host = process.env.SHORTREADER_BRIDGE_HOST ?? '127.0.0.1';
 // In MCP mode stdout is the protocol, so everything else goes to stderr.
 const log = (line) => (mcp ? console.error : console.log)(`[image-bridge] ${line}`);
 
-if (typeof WebSocket === 'undefined') {
-  console.error('The image bridge needs Node.js 22 or newer.');
+// The engine is the app's TypeScript, which Node runs as is from 22.18 on.
+const [major, minor] = process.versions.node.split('.').map(Number);
+if (major < 22 || (major === 22 && minor < 18) || typeof WebSocket === 'undefined') {
+  console.error('The image bridge needs Node.js 22.18 or newer.');
   process.exit(1);
 }
+
+const { startHttp } = await import('./src/http.mjs');
+const { startMcp } = await import('./src/mcp.mjs');
 
 if (mcp) startMcp({ version });
 

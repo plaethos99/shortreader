@@ -11,6 +11,7 @@
  */
 import DOMPurify from 'dompurify';
 import katex from 'katex';
+import { Marked } from 'marked';
 
 // $$display$$ | \[display\] | \(inline\) | $inline$. An inline `$` must be
 // followed by a non-space and closed by a non-space `$` that is not followed by
@@ -84,27 +85,64 @@ const escapeHtml = (text: string): string =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
-/** Text with its math rendered as MathML; sanitized HTML. */
-export const renderMathText = (text: string): string => {
-  const html = split(text)
-    .map(({ text: raw, math }) =>
-      math
-        ? katex.renderToString(math.latex, {
-            displayMode: math.display,
-            output: 'mathml',
-            // Bad LaTeX renders red with the error on hover instead of throwing.
-            throwOnError: false,
-            // No \href, \url or \includegraphics from model output.
-            trust: false,
-          })
-        : escapeHtml(raw),
-    )
-    .join('');
-  return DOMPurify.sanitize(html, {
-    USE_PROFILES: { html: true, mathMl: true },
-    FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'a'],
+const renderMath = (math: NonNullable<Segment['math']>): string =>
+  katex.renderToString(math.latex, {
+    displayMode: math.display,
+    output: 'mathml',
+    // Bad LaTeX renders red with the error on hover instead of throwing.
+    throwOnError: false,
+    // No \href, \url or \includegraphics from model output.
+    trust: false,
   });
+
+const sanitize = (html: string): string =>
+  DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true, mathMl: true },
+    FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'a', 'img'],
+  });
+
+/** Text with its math rendered as MathML; sanitized HTML. */
+export const renderMathText = (text: string): string =>
+  sanitize(
+    split(text)
+      .map(({ text: raw, math }) => (math ? renderMath(math) : escapeHtml(raw)))
+      .join(''),
+  );
+
+// AI replies are Markdown (bold, lists, headings, tables). A scoped parser, as
+// the shared `marked` singleton is configured elsewhere; `breaks` keeps the
+// model's single line breaks as breaks.
+const aiMarkdown = new Marked({ gfm: true, breaks: true });
+
+/**
+ * AI-written Markdown with its math rendered as MathML; sanitized HTML. Math
+ * is found first, with the same repairs as renderMathText, and held out of the
+ * Markdown pass as placeholders, so `_` and `*` inside LaTeX don't become
+ * emphasis.
+ */
+const renderWithMarkdown = (text: string, inline: boolean): string => {
+  const maths: string[] = [];
+  const source = split(text)
+    .map(({ text: raw, math }) => {
+      if (!math) return raw;
+      maths.push(renderMath(math));
+      return `MATHSLOT${maths.length - 1}TOLSHTAM`;
+    })
+    .join('');
+  const parsed = inline
+    ? aiMarkdown.parseInline(source, { async: false })
+    : aiMarkdown.parse(source, { async: false });
+  const html = (parsed as string).replace(
+    /MATHSLOT(\d+)TOLSHTAM/g,
+    (_, i: string) => maths[Number(i)] ?? '',
+  );
+  return sanitize(html);
 };
+
+export const renderMarkdownMath = (text: string): string => renderWithMarkdown(text, false);
+
+/** One line or short item: bold, italics and code, plus math; no blocks. */
+export const renderInlineMarkdownMath = (text: string): string => renderWithMarkdown(text, true);
 
 const GREEK = [
   'alpha',
@@ -186,11 +224,16 @@ const latexToWords = (latex: string): string => {
 };
 
 /** Text for read-aloud: math spans in words, everything else unchanged. */
+// Markdown marks a reader would hear as "asterisk asterisk": emphasis, inline
+// code, heading hashes, quote and list markers at the start of a line.
+const stripMarkdown = (prose: string): string =>
+  prose.replace(/(\*\*|__|\*|~~|`)/g, '').replace(/^\s{0,3}(#{1,6}|>|[-+]|\d+[.)])\s+/gm, '');
+
 export const mathToSpeech = (text: string): string => {
   const segments = split(text);
-  if (!segments.some((s) => s.math)) return text;
+  if (!segments.some((s) => s.math)) return stripMarkdown(text);
   return segments
-    .map(({ text: raw, math }) => (math ? ` ${latexToWords(math.latex)} ` : raw))
+    .map(({ text: raw, math }) => (math ? ` ${latexToWords(math.latex)} ` : stripMarkdown(raw)))
     .join('')
     .replace(/ {2,}/g, ' ')
     .replace(/ ([.,;:!?])/g, '$1')

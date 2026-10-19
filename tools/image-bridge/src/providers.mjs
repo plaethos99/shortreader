@@ -1,40 +1,42 @@
-/** The two places pictures come from, behind one shape. */
-import { flowImage, flowState, openFlow } from './flow.mjs';
-import { grokImage, grokState, openGrok } from './grok.mjs';
+/**
+ * The two places pictures come from, behind one shape. The work is done by the
+ * app's own image engine (apps/readest-app/src/services/imagegen), which Node
+ * runs straight from its TypeScript source, so the app and the bridge drive
+ * Flow and Grok Imagine the same way.
+ */
+import {
+  IMAGE_ASPECTS,
+  PROVIDER_LABELS,
+  makeImage,
+  openSite,
+  siteState,
+} from '../../../apps/readest-app/src/services/imagegen/core.ts';
+import { createNodePlatform } from '../../../apps/readest-app/src/services/imagegen/nodePlatform.ts';
 
 export const PROVIDERS = /** @type {const} */ (['flow', 'imagine']);
-export const ASPECTS = /** @type {const} */ (['16:9', '9:16', '4:3', '3:4', '1:1']);
+export const ASPECTS = IMAGE_ASPECTS;
 
-const byName = {
-  flow: { label: 'Google Flow', open: openFlow, state: flowState, image: flowImage },
-  imagine: { label: 'Grok Imagine', open: openGrok, state: grokState, image: grokImage },
-};
+const platform = createNodePlatform();
 
 export const provider = (name) => {
-  const p = byName[name];
-  if (!p) throw new Error(`Unknown image provider "${name}": use ${PROVIDERS.join(' or ')}`);
-  return p;
+  if (!PROVIDERS.includes(name)) {
+    throw new Error(`Unknown image provider "${name}": use ${PROVIDERS.join(' or ')}`);
+  }
+  return { label: PROVIDER_LABELS[name], open: () => openSite(platform, name) };
 };
 
 /** Each provider's state: closed (no window), signin, or ready. */
 export const status = async () => ({
-  flow: await flowState(),
-  imagine: await grokState(),
+  flow: await siteState(platform, 'flow'),
+  imagine: await siteState(platform, 'imagine'),
 });
 
 /**
- * Make one picture. Opens the provider's window first when it isn't running,
- * so the user can sign in; the request then fails with a message saying so.
+ * Make one picture. Opens the provider's window when it isn't open and waits
+ * (up to 10 minutes) for the user to sign in there, then makes it.
  */
-export const generate = async ({ provider: name, prompt, aspect = '16:9' }) => {
-  const p = provider(name);
-  if (typeof prompt !== 'string' || !prompt.trim()) throw new Error('A prompt is needed');
-  if (!ASPECTS.includes(aspect)) throw new Error(`Aspect must be one of ${ASPECTS.join(', ')}`);
-  if ((await p.state()) === 'closed') {
-    await p.open();
-    throw new Error(
-      `${p.label} was not open. Its window is opening now: sign in there, then try again.`,
-    );
-  }
-  return p.image(prompt.trim(), aspect);
+export const generate = async ({ provider: name, prompt, aspect = '16:9' }, onProgress) => {
+  provider(name);
+  const image = await makeImage(platform, name, String(prompt ?? ''), aspect, onProgress);
+  return { mimeType: image.mimeType, data: Buffer.from(image.data, 'base64') };
 };

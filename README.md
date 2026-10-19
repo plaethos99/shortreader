@@ -12,15 +12,12 @@ key), OpenAI, Anthropic, Google Gemini, xAI, DeepSeek, Groq, Mistral, Together,
 Ollama, or any OpenAI-compatible endpoint — paste your key and choose any model
 it offers. Your key stays on your device and goes only to that service.
 
-**Pictures from Google Flow or Grok Imagine**, your choice, made in a browser
-window where you are signed in. Run the image bridge on your computer:
-
-```bash
-node tools/image-bridge/bridge.mjs
-```
-
-See [tools/image-bridge](tools/image-bridge/README.md). The bridge is also an
-MCP server, so agents can use the same Flow / Imagine drivers.
+**Pictures from Google Flow or Grok Imagine**, your choice. Ask for a mind map,
+a visual or a comic and ShortReader opens the site in its own Edge or Chrome
+window; sign in once and the picture is made by itself. Nothing else to run on
+the desktop app or the web app on your computer. Phones use the
+[image bridge](tools/image-bridge/README.md) on a computer on the same network;
+the bridge is also an MCP server, so agents can make pictures the same way.
 
 The rest of this README is Readest's own.
 

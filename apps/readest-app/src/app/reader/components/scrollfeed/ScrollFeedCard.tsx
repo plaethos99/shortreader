@@ -39,6 +39,8 @@ const ScrollFeedCard: React.FC<ScrollFeedCardProps> = ({
 }) => {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  // What the picture is waiting on: signing in to Flow / Imagine, or making it.
+  const [status, setStatus] = useState('');
   const [error, setError] = useState('');
   const reduced = useRef(prefersReducedMotion());
   const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
@@ -86,9 +88,10 @@ const ScrollFeedCard: React.FC<ScrollFeedCardProps> = ({
   const handleGenerate = async () => {
     if (generating || imageUrl) return;
     setGenerating(true);
+    setStatus('');
     setError('');
     try {
-      const dataUrl = await generateBookVisual(card.imagePrompt);
+      const dataUrl = await generateBookVisual(card.imagePrompt, '16:9', setStatus);
       const blob = await (await fetch(dataUrl)).blob();
       await saveCardImage(bookHash, card.id, blob);
       setImageUrl(URL.createObjectURL(blob));
@@ -96,6 +99,7 @@ const ScrollFeedCard: React.FC<ScrollFeedCardProps> = ({
       setError(e instanceof Error ? e.message : 'Image generation failed');
     } finally {
       setGenerating(false);
+      setStatus('');
     }
   };
 
@@ -233,6 +237,7 @@ const ScrollFeedCard: React.FC<ScrollFeedCardProps> = ({
           </button>
         )}
 
+        {generating && status && <p className='mt-3 text-xs opacity-70'>{status}</p>}
         {error && <p className='text-error mt-3 text-xs'>{error}</p>}
         {pressed && (
           <p className='text-primary mt-3 text-xs' role='status'>

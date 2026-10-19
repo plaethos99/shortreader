@@ -2,22 +2,29 @@
 
 import React, { useMemo } from 'react';
 
-import { hasMath, renderMathText } from '@/utils/mathText';
+import { hasMath, renderInlineMarkdownMath } from '@/utils/mathText';
 
 interface MathTextProps {
   text: string;
   className?: string;
 }
 
+// Markdown's inline marks, which models use even in short items.
+const INLINE_MARKS = /[*_`~]/;
+
 /**
- * AI-written text with its LaTeX rendered as math. Text without math renders
- * as a plain string, exactly as before; with math, as sanitized MathML (see
- * utils/mathText).
+ * A short piece of AI-written text: its LaTeX rendered as math and its inline
+ * Markdown (bold, italics, code) applied. Text with neither renders as a plain
+ * string; otherwise as sanitized HTML (see utils/mathText). Paragraph-length
+ * replies use MarkdownText.
  */
 const MathText: React.FC<MathTextProps> = ({ text, className }) => {
-  const html = useMemo(() => (hasMath(text) ? renderMathText(text) : null), [text]);
+  const html = useMemo(
+    () => (INLINE_MARKS.test(text) || hasMath(text) ? renderInlineMarkdownMath(text) : null),
+    [text],
+  );
   if (html === null) return <span className={className}>{text}</span>;
-  // Sanitized in renderMathText: escaped prose plus KaTeX MathML only.
+  // Sanitized in renderInlineMarkdownMath.
   return <span className={className} dangerouslySetInnerHTML={{ __html: html }} />;
 };
 

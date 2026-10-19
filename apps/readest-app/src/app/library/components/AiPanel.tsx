@@ -52,6 +52,7 @@ import {
 import { EdgeSpeechTTS } from '@/libs/edgeTTS';
 import { EdgeSpeaker } from '@/services/tts/aiSpeaker';
 import MathText from '@/components/MathText';
+import MarkdownText from '@/components/MarkdownText';
 import { mathToSpeech } from '@/utils/mathText';
 import AiImageFrame from './AiImageFrame';
 
@@ -319,6 +320,8 @@ const AiPanel: React.FC = () => {
   const [visualUrl, setVisualUrl] = useState('');
   const [comicUrl, setComicUrl] = useState('');
   const [imgBusy, setImgBusy] = useState(false);
+  // What the picture is waiting on (signing in, making it), shown while busy.
+  const [imgStatus, setImgStatus] = useState('');
   /** Which titbit is generating / last drove the preview image. */
   const [activeTitbitId, setActiveTitbitId] = useState('');
 
@@ -548,6 +551,7 @@ const AiPanel: React.FC = () => {
   const runImageFromTitbit = async (kind: ImageTab, titbit: Titbit) => {
     if (imgBusy || !imageConfigured) return;
     setImgBusy(true);
+    setImgStatus('');
     setActiveTitbitId(titbit.id);
     setErr('');
     const chapterTitle =
@@ -559,16 +563,20 @@ const AiPanel: React.FC = () => {
           0,
           2000,
         );
-        url = await generateMindMap(titbit.title, focus, currentBook.title);
+        url = await generateMindMap(titbit.title, focus, currentBook.title, setImgStatus);
         setMindmapUrl(url);
       } else if (kind === 'visuals') {
         url = await generateBookVisual(
           `A beautiful, atmospheric illustration of "${titbit.title}" from "${currentBook.title}" (chapter "${chapterTitle}"). ${titbit.visualPrompt}. Painterly, evocative, high detail, no text overlay.`,
+          '16:9',
+          setImgStatus,
         );
         setVisualUrl(url);
       } else {
         url = await generateBookVisual(
           `A vivid comic-book panel of "${titbit.title}" from "${currentBook.title}" (chapter "${chapterTitle}"). ${titbit.visualPrompt}. Bold ink lines, dynamic composition, dramatic lighting.`,
+          '16:9',
+          setImgStatus,
         );
         setComicUrl(url);
       }
@@ -583,6 +591,7 @@ const AiPanel: React.FC = () => {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setImgBusy(false);
+      setImgStatus('');
     }
   };
 
@@ -704,7 +713,7 @@ const AiPanel: React.FC = () => {
         )}
         {configured && isImageTab(tab) && !imageConfigured && (
           <div className='bg-warning/15 text-warning-content mx-4 mt-2 rounded-md px-3 py-2 text-xs'>
-            Pictures need the image bridge.{' '}
+            On a phone, pictures are made on a computer through the image bridge.{' '}
             <button className='link font-medium' onClick={showAIKeys}>
               Set it up
             </button>
@@ -860,9 +869,10 @@ const AiPanel: React.FC = () => {
                           </button>
                           <VoicePicker />
                         </div>
-                        <p className='text-[15px] leading-relaxed' style={{ fontFamily: SERIF }}>
-                          <MathText text={summary.summary} />
-                        </p>
+                        <MarkdownText
+                          className='text-[15px] leading-relaxed'
+                          text={summary.summary}
+                        />
                         {summary.keyTakeaways.length > 0 && (
                           <ul className='list-disc space-y-1 pl-5 text-sm'>
                             {summary.keyTakeaways.map((t, i) => (
@@ -901,9 +911,10 @@ const AiPanel: React.FC = () => {
                         </button>
                         <VoicePicker />
                       </div>
-                      <p className='text-[15px] leading-relaxed' style={{ fontFamily: SERIF }}>
-                        <MathText text={analysis.overview} />
-                      </p>
+                      <MarkdownText
+                        className='text-[15px] leading-relaxed'
+                        text={analysis.overview}
+                      />
                     </section>
                     {analysis.importantQuotes?.length > 0 && (
                       <section className='space-y-3'>
@@ -990,7 +1001,11 @@ const AiPanel: React.FC = () => {
                       <div
                         className={`chat-bubble text-sm ${m.role === 'user' ? 'chat-bubble-primary' : ''}`}
                       >
-                        <MathText text={m.text} />
+                        {m.role === 'user' ? (
+                          <MathText text={m.text} />
+                        ) : (
+                          <MarkdownText text={m.text} />
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1067,9 +1082,10 @@ const AiPanel: React.FC = () => {
                   of the book.
                 </p>
                 {(analysis?.overview || summary?.summary) && (
-                  <p className='text-sm leading-relaxed' style={{ fontFamily: SERIF }}>
-                    <MathText text={analysis?.overview || summary?.summary || ''} />
-                  </p>
+                  <MarkdownText
+                    className='leading-relaxed'
+                    text={analysis?.overview || summary?.summary || ''}
+                  />
                 )}
               </div>
             )}
@@ -1179,8 +1195,11 @@ const AiPanel: React.FC = () => {
 
                 {imgBusy && (
                   <div className='flex items-center gap-2 text-sm'>
-                    <span className='loading loading-spinner loading-sm' /> Generating{' '}
-                    {IMAGE_KIND_LABEL[tab]} in {IMAGE_PROVIDER_LABELS[imageProvider]}…
+                    <span className='loading loading-spinner loading-sm shrink-0' />
+                    <span>
+                      {imgStatus ||
+                        `Generating ${IMAGE_KIND_LABEL[tab]} in ${IMAGE_PROVIDER_LABELS[imageProvider]}…`}
+                    </span>
                   </div>
                 )}
 

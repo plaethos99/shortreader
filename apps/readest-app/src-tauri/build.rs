@@ -59,6 +59,7 @@ fn main() {
             "set_web_browser_status",
             "extract_web_browser_archive",
             "spawn_fresh_browser",
+            "launch_image_browser",
             "verify_update_signature",
             "install_nightly_update",
             "localsend_start",

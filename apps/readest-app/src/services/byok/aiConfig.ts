@@ -110,5 +110,3 @@ export const textConfigProblem = (config: AIConfig = getAIConfig()): string | nu
 };
 
 export const isTextAIConfigured = (): boolean => textConfigProblem() === null;
-
-export const isImageGenConfigured = (): boolean => getAIConfig().bridgeUrl.trim().length > 0;

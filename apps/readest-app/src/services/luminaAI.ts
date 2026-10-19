@@ -6,8 +6,9 @@
  * own (Ollama/OpenRouter) AI assistant.
  */
 import { chatJson, chatText } from './llm';
-import { generateImage, type ImageAspect } from './imageBridge';
-import { isImageGenConfigured, isTextAIConfigured } from './byok/aiConfig';
+import { generateImage, isImageGenConfigured, type ImageAspect } from './imageBridge';
+import { isTextAIConfigured } from './byok/aiConfig';
+import type { Progress } from './imagegen/core';
 
 export const isLuminaAIConfigured = isTextAIConfigured;
 export { isImageGenConfigured };
@@ -170,6 +171,7 @@ export async function generateMindMap(
   topic: string,
   description: string,
   bookTitle: string,
+  onProgress?: Progress,
 ): Promise<string> {
   const prompt = `Create a highly professional, clean, and minimal mind map diagram for the topic: "${topic}".
   Context: This is from the book "${bookTitle}".
@@ -178,12 +180,15 @@ export async function generateMindMap(
   Style: Modern infographic, high contrast, clean white background, elegant typography.
   Ensure all text in the diagram is Sharp and Legible.`;
 
-  return generateImage(prompt, '16:9');
+  return generateImage(prompt, '16:9', onProgress);
 }
 
 /** Generate an illustrative image (visuals / comic / feed card) as a data: URL. */
-export const generateBookVisual = (prompt: string, aspect: ImageAspect = '16:9'): Promise<string> =>
-  generateImage(prompt, aspect);
+export const generateBookVisual = (
+  prompt: string,
+  aspect: ImageAspect = '16:9',
+  onProgress?: Progress,
+): Promise<string> => generateImage(prompt, aspect, onProgress);
 
 const DEFAULT_CONVERSE_PROMPTS = [
   'Who are the main characters and what drives them?',

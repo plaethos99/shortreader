@@ -11,13 +11,14 @@ import { TEXT_PROVIDERS, getTextProvider, type TextProviderId } from '@/services
 import { listModels, testTextModel } from '@/services/llm';
 import {
   IMAGE_PROVIDER_LABELS,
-  bridgeStatus,
+  imageRoute,
+  imageStatus,
   openImageProvider,
   type ProviderState,
 } from '@/services/imageBridge';
 import { BoxedList, SettingsInput, SettingsRow, SettingsSelect, Tips } from './primitives';
 
-type Check = { state: 'idle' | 'busy' | 'ok' | 'error'; message?: string };
+type Check = { state: 'idle' | 'busy' | 'ok' | 'info' | 'error'; message?: string };
 
 const STATE_LABEL: Record<ProviderState, string> = {
   closed: 'window closed',
@@ -43,7 +44,7 @@ const CheckLine: React.FC<{ check: Check }> = ({ check }) =>
 /**
  * Bring-your-own-key setup for ShortReader's AI: the text service, key and
  * model, and where pictures come from (Google Flow or Grok Imagine through the
- * image bridge). Everything is saved on this device as it is typed.
+ * image engine). Everything is saved on this device as it is typed.
  */
 const AIKeysSettings: React.FC = () => {
   const { config, update } = useAIConfigStore();
@@ -53,6 +54,7 @@ const AIKeysSettings: React.FC = () => {
   const [modelCheck, setModelCheck] = useState<Check>({ state: 'idle' });
   const [textCheck, setTextCheck] = useState<Check>({ state: 'idle' });
   const [bridgeCheck, setBridgeCheck] = useState<Check>({ state: 'idle' });
+  const onPhone = imageRoute() === 'bridge';
 
   const setFor = (
     field: 'apiKeys' | 'models' | 'baseUrls',
@@ -99,12 +101,14 @@ const AIKeysSettings: React.FC = () => {
   const checkBridge = async () => {
     setBridgeCheck({ state: 'busy' });
     try {
-      const status = await bridgeStatus();
+      const status = await imageStatus();
       const mine = status[config.imageProvider];
       setBridgeCheck({
-        state: mine === 'ready' ? 'ok' : 'error',
-        message: `Bridge running. ${IMAGE_PROVIDER_LABELS[config.imageProvider]}: ${STATE_LABEL[mine]}.${
-          mine === 'ready' ? '' : ' Open it, sign in (for Flow, open a project), then check again.'
+        state: mine === 'ready' ? 'ok' : 'info',
+        message: `${IMAGE_PROVIDER_LABELS[config.imageProvider]}: ${STATE_LABEL[mine]}.${
+          mine === 'ready'
+            ? ''
+            : ' Press Open and sign in — or just ask for a picture: the window opens by itself and the picture starts once you are in.'
         }`,
       });
     } catch (e) {
@@ -118,7 +122,7 @@ const AIKeysSettings: React.FC = () => {
       await openImageProvider(config.imageProvider);
       setBridgeCheck({
         state: 'ok',
-        message: `${IMAGE_PROVIDER_LABELS[config.imageProvider]} is opening in its own browser window. Sign in there once.`,
+        message: `${IMAGE_PROVIDER_LABELS[config.imageProvider]} is opening in its own browser window. Sign in there once; it remembers you.`,
       });
     } catch (e) {
       setBridgeCheck({ state: 'error', message: e instanceof Error ? e.message : String(e) });
@@ -217,7 +221,11 @@ const AIKeysSettings: React.FC = () => {
       <div>
         <BoxedList
           title='Pictures'
-          description='Mind maps, visuals, comics and feed pictures are made in Google Flow or Grok Imagine, in a browser window where you are signed in. The image bridge on your computer drives it.'
+          description={
+            onPhone
+              ? 'Mind maps, visuals, comics and feed pictures are made in Google Flow or Grok Imagine, in a browser on a computer on the same network, through the image bridge there.'
+              : 'Mind maps, visuals, comics and feed pictures are made in Google Flow or Grok Imagine. Asking for one opens the site in its own browser window; sign in once and the picture is made by itself.'
+          }
         >
           <SettingsRow label='Make pictures with'>
             <SettingsSelect
@@ -230,24 +238,28 @@ const AIKeysSettings: React.FC = () => {
               ariaLabel='Picture provider'
             />
           </SettingsRow>
-          <SettingsRow label='Image bridge address'>
-            <SettingsInput
-              type='url'
-              spellCheck={false}
-              value={config.bridgeUrl}
-              placeholder={DEFAULT_BRIDGE_URL}
-              onChange={(e) => update({ bridgeUrl: e.target.value })}
-            />
-          </SettingsRow>
-          <SettingsRow label='Bridge token' description='Only if you set one on the bridge'>
-            <SettingsInput
-              type='password'
-              autoComplete='off'
-              value={config.bridgeToken}
-              placeholder='None'
-              onChange={(e) => update({ bridgeToken: e.target.value })}
-            />
-          </SettingsRow>
+          {onPhone && (
+            <SettingsRow label='Image bridge address'>
+              <SettingsInput
+                type='url'
+                spellCheck={false}
+                value={config.bridgeUrl}
+                placeholder={DEFAULT_BRIDGE_URL}
+                onChange={(e) => update({ bridgeUrl: e.target.value })}
+              />
+            </SettingsRow>
+          )}
+          {onPhone && (
+            <SettingsRow label='Bridge token' description='Only if you set one on the bridge'>
+              <SettingsInput
+                type='password'
+                autoComplete='off'
+                value={config.bridgeToken}
+                placeholder='None'
+                onChange={(e) => update({ bridgeToken: e.target.value })}
+              />
+            </SettingsRow>
+          )}
           <SettingsRow label={`Sign in to ${IMAGE_PROVIDER_LABELS[config.imageProvider]}`}>
             <div className='flex gap-2'>
               <button className='btn btn-sm' onClick={openProvider}>
@@ -269,9 +281,16 @@ const AIKeysSettings: React.FC = () => {
         </li>
         <li>Reading scanned books needs a model that reads images.</li>
         <li>
-          Start the image bridge with <code>node tools/image-bridge/bridge.mjs</code> (Node 22+). On
-          a phone, run it on a computer on the same network and put that computer’s address here.
+          Pictures need Microsoft Edge or Google Chrome installed; your usual browser profile is
+          never touched.
         </li>
+        {onPhone && (
+          <li>
+            On the computer, start the image bridge with{' '}
+            <code>SHORTREADER_BRIDGE_HOST=0.0.0.0 node tools/image-bridge/bridge.mjs</code> and put
+            that computer’s address here.
+          </li>
+        )}
       </Tips>
     </div>
   );
