@@ -135,6 +135,15 @@ class OpenExternalUrlArgs {
 }
 
 @InvokeArg
+class OpenUrlWithArgs {
+    var url: String? = null
+    // Open in this app (by package name), e.g. the Google Flow or Grok app.
+    var packageName: String? = null
+    // Open in the web browser, so a site's own app doesn't take the link.
+    var browser: Boolean = false
+}
+
+@InvokeArg
 class ShowLookupPopoverArgs {
     var word: String? = null
 }
@@ -1321,6 +1330,75 @@ class NativeBridgePlugin(private val activity: Activity): Plugin(activity) {
             invoke.resolve(ret)
         } catch (e: Exception) {
             invoke.reject("Failed to open URL: ${e.message}")
+        }
+    }
+
+    /**
+     * ShortReader picture hand-off: open [OpenUrlWithArgs.url] in a chosen
+     * app (Google Flow, Grok) or in the web browser. Resolves
+     * `{ opened, installed }`; `installed: false` when the named app isn't
+     * on the phone (needs a `<queries>` entry in the manifest to be seen on
+     * Android 11+).
+     */
+    @Command
+    fun open_url_with(invoke: Invoke) {
+        val args = invoke.parseArgs(OpenUrlWithArgs::class.java)
+        val url = args.url
+        if (url.isNullOrBlank()) {
+            invoke.reject("No URL to open")
+            return
+        }
+        val pm = activity.packageManager
+        val ret = JSObject()
+        try {
+            val pkg = args.packageName
+            if (!pkg.isNullOrBlank()) {
+                val installed = try {
+                    pm.getPackageInfo(pkg, 0)
+                    true
+                } catch (e: PackageManager.NameNotFoundException) {
+                    false
+                }
+                ret.put("installed", installed)
+                if (!installed) {
+                    ret.put("opened", false)
+                    invoke.resolve(ret)
+                    return
+                }
+                // The link in that app if it takes links, else just open the app.
+                val view = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    .setPackage(pkg)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                val intent = if (view.resolveActivity(pm) != null) view
+                    else pm.getLaunchIntentForPackage(pkg)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (intent == null) {
+                    ret.put("opened", false)
+                    invoke.resolve(ret)
+                    return
+                }
+                activity.startActivity(intent)
+            } else {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    .addCategory(Intent.CATEGORY_BROWSABLE)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (args.browser) {
+                    // Pin the default (else first) browser, so the site's own
+                    // app doesn't intercept the link.
+                    val browsers = queryBrowserPackages(pm)
+                    val probe = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.example.com"))
+                        .addCategory(Intent.CATEGORY_BROWSABLE)
+                    val preferred = pm.resolveActivity(probe, PackageManager.MATCH_DEFAULT_ONLY)
+                        ?.activityInfo?.packageName
+                    val browser = preferred?.takeIf { it in browsers } ?: browsers.firstOrNull()
+                    if (browser != null) intent.setPackage(browser)
+                }
+                activity.startActivity(intent)
+                ret.put("installed", true)
+            }
+            ret.put("opened", true)
+            invoke.resolve(ret)
+        } catch (e: Exception) {
+            invoke.reject("Could not open ${url}: ${e.message}")
         }
     }
 

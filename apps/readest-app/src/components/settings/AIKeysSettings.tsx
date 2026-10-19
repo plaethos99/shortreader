@@ -55,6 +55,8 @@ const AIKeysSettings: React.FC = () => {
   const [textCheck, setTextCheck] = useState<Check>({ state: 'idle' });
   const [bridgeCheck, setBridgeCheck] = useState<Check>({ state: 'idle' });
   const onPhone = imageRoute() === 'bridge';
+  // A phone makes pictures itself (Flow / Grok app hand-off) unless set to a computer.
+  const phoneHandoff = onPhone && config.phonePictures !== 'computer';
 
   const setFor = (
     field: 'apiKeys' | 'models' | 'baseUrls',
@@ -122,7 +124,9 @@ const AIKeysSettings: React.FC = () => {
       await openImageProvider(config.imageProvider);
       setBridgeCheck({
         state: 'ok',
-        message: `${IMAGE_PROVIDER_LABELS[config.imageProvider]} is opening in its own browser window. Sign in there once; it remembers you.`,
+        message: phoneHandoff
+          ? `Opening ${IMAGE_PROVIDER_LABELS[config.imageProvider]}. Sign in there once.`
+          : `${IMAGE_PROVIDER_LABELS[config.imageProvider]} is opening in its own browser window. Sign in there once; it remembers you.`,
       });
     } catch (e) {
       setBridgeCheck({ state: 'error', message: e instanceof Error ? e.message : String(e) });
@@ -222,9 +226,11 @@ const AIKeysSettings: React.FC = () => {
         <BoxedList
           title='Pictures'
           description={
-            onPhone
-              ? 'Mind maps, visuals, comics and feed pictures are made in Google Flow or Grok Imagine, in a browser on a computer on the same network, through the image bridge there.'
-              : 'Mind maps, visuals, comics and feed pictures are made in Google Flow or Grok Imagine. Asking for one opens the site in its own browser window; sign in once and the picture is made by itself.'
+            phoneHandoff
+              ? 'Mind maps, visuals, comics and feed pictures are made in Google Flow or Grok Imagine. Asking for one copies its prompt and opens the app or the web browser — your choice; make the picture there and add it back.'
+              : onPhone
+                ? 'Mind maps, visuals, comics and feed pictures are made in Google Flow or Grok Imagine, in a browser on a computer on the same network, through the image bridge there.'
+                : 'Mind maps, visuals, comics and feed pictures are made in Google Flow or Grok Imagine. Asking for one opens the site in its own browser window; sign in once and the picture is made by itself.'
           }
         >
           <SettingsRow label='Make pictures with'>
@@ -239,6 +245,19 @@ const AIKeysSettings: React.FC = () => {
             />
           </SettingsRow>
           {onPhone && (
+            <SettingsRow label='Make pictures on'>
+              <SettingsSelect
+                value={config.phonePictures}
+                onChange={(e) => update({ phonePictures: e.target.value as 'phone' | 'computer' })}
+                options={[
+                  { value: 'phone', label: 'This phone (app or browser)' },
+                  { value: 'computer', label: 'A computer (image bridge)' },
+                ]}
+                ariaLabel='Where pictures are made'
+              />
+            </SettingsRow>
+          )}
+          {onPhone && !phoneHandoff && (
             <SettingsRow label='Image bridge address'>
               <SettingsInput
                 type='url'
@@ -249,7 +268,7 @@ const AIKeysSettings: React.FC = () => {
               />
             </SettingsRow>
           )}
-          {onPhone && (
+          {onPhone && !phoneHandoff && (
             <SettingsRow label='Bridge token' description='Only if you set one on the bridge'>
               <SettingsInput
                 type='password'
@@ -265,9 +284,11 @@ const AIKeysSettings: React.FC = () => {
               <button className='btn btn-sm' onClick={openProvider}>
                 Open
               </button>
-              <button className='btn btn-sm' onClick={checkBridge}>
-                Check
-              </button>
+              {!phoneHandoff && (
+                <button className='btn btn-sm' onClick={checkBridge}>
+                  Check
+                </button>
+              )}
             </div>
           </SettingsRow>
         </BoxedList>
@@ -280,11 +301,13 @@ const AIKeysSettings: React.FC = () => {
           with one key. Any other OpenAI-compatible service works under “Other”.
         </li>
         <li>Reading scanned books needs a model that reads images.</li>
-        <li>
-          Pictures need Microsoft Edge or Google Chrome installed; your usual browser profile is
-          never touched.
-        </li>
-        {onPhone && (
+        {!phoneHandoff && (
+          <li>
+            Pictures need Microsoft Edge or Google Chrome installed; your usual browser profile is
+            never touched.
+          </li>
+        )}
+        {onPhone && !phoneHandoff && (
           <li>
             On the computer, start the image bridge with{' '}
             <code>SHORTREADER_BRIDGE_HOST=0.0.0.0 node tools/image-bridge/bridge.mjs</code> and put

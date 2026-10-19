@@ -302,6 +302,24 @@ pub struct OpenExternalUrlResponse {
     pub error: Option<String>,
 }
 
+/// Open a URL in a named app (`package_name`) or the web browser
+/// (`browser`). Android only; used by ShortReader's picture hand-off.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenUrlWithRequest {
+    pub url: String,
+    pub package_name: Option<String>,
+    #[serde(default)]
+    pub browser: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenUrlWithResponse {
+    pub opened: bool,
+    pub installed: bool,
+}
+
 /// Hand a word off to the platform's native dictionary surface.
 ///
 /// On iOS this presents `UIReferenceLibraryViewController` modally

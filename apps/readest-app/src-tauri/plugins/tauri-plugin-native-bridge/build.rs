@@ -26,6 +26,7 @@ const COMMANDS: &[&str] = &[
     "stop_ambient_light_updates",
     "get_external_sdcard_path",
     "open_external_url",
+    "open_url_with",
     "show_lookup_popover",
     "get_lookup_dictionary",
     "clear_lookup_dictionary",

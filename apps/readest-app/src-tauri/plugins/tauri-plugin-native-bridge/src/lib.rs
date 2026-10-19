@@ -82,6 +82,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::stop_ambient_light_updates,
             commands::get_external_sdcard_path,
             commands::open_external_url,
+            commands::open_url_with,
             commands::show_lookup_popover,
             commands::select_directory,
             commands::show_file_picker,

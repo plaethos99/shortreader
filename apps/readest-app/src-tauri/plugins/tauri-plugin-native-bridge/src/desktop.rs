@@ -216,6 +216,13 @@ impl<R: Runtime> NativeBridge<R> {
         Err(crate::Error::UnsupportedPlatformError)
     }
 
+    pub fn open_url_with(
+        &self,
+        _payload: OpenUrlWithRequest,
+    ) -> crate::Result<OpenUrlWithResponse> {
+        Err(crate::Error::UnsupportedPlatformError)
+    }
+
     /// Desktop has no mobile-style "system dictionary intent" surface;
     /// macOS's HUD is invoked through a separate top-level Tauri
     /// command (`show_lookup_popover` in `src/macos/system_dictionary.rs`),

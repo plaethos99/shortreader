@@ -132,6 +132,7 @@ import { useCustomFonts } from '@/hooks/useCustomFonts';
 import DropIndicator from '@/components/DropIndicator';
 import SettingsDialog from '@/components/settings/SettingsDialog';
 import AIKeysDialog from '@/components/AIKeysDialog';
+import PictureHandoffDialog from '@/components/PictureHandoffDialog';
 import ModalPortal from '@/components/ModalPortal';
 import TransferQueuePanel from './components/TransferQueuePanel';
 
@@ -2156,6 +2157,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
       <CacheManagerWindow />
       {isSettingsDialogOpen && <SettingsDialog bookKey={''} />}
       <AIKeysDialog />
+      <PictureHandoffDialog />
       {showCatalogManager && <CatalogDialog onClose={handleDismissOPDSDialog} />}
       {showFeeds && <FeedsView onClose={() => setShowFeeds(false)} />}
       <AddFeedModal

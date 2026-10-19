@@ -8,15 +8,17 @@
  * Where the browser is driven from depends on where the app runs:
  * - desktop app: by the app itself;
  * - web app: by its own server route (/api/imagegen), on the reader's computer;
- * - phone: by the image bridge (tools/image-bridge) on a computer on the same
- *   network, at the address set in Settings → AI Keys — a phone can't run the
- *   browser window itself.
+ * - phone: a phone can't run that browser window, so by default the reader
+ *   makes the picture in the Flow / Grok app or the browser and adds it
+ *   (services/pictureHandoff); or, if they choose, the image bridge
+ *   (tools/image-bridge) on a computer on the same network does it.
  */
 import { getAIFetch } from '@/services/ai/utils/httpFetch';
 import { isTauriAppPlatform, isWebAppPlatform } from '@/services/environment';
 import { getOSPlatform } from '@/utils/misc';
 
 import { getAIConfig, type ImageProviderId } from './byok/aiConfig';
+import { openPictureSite, requestPictureHandoff } from './pictureHandoff';
 import {
   PROVIDER_LABELS,
   makeImage,
@@ -116,10 +118,15 @@ async function bridgeCall<T>(path: string, body?: unknown): Promise<T> {
 
 // ---- Public API -----------------------------------------------------------------
 
-/** Pictures can be asked for: always on desktop and web; on a phone once a
- * bridge address is set. */
+/** On a phone, whether pictures go through a computer's image bridge
+ * instead of the hand-off to the Flow / Grok app. */
+const usesComputerBridge = (): boolean =>
+  imageRoute() === 'bridge' && getAIConfig().phonePictures === 'computer';
+
+/** Pictures can be asked for: always, except a phone set to use a computer
+ * with no bridge address. */
 export const isImageGenConfigured = (): boolean =>
-  imageRoute() !== 'bridge' || getAIConfig().bridgeUrl.trim().length > 0;
+  !usesComputerBridge() || getAIConfig().bridgeUrl.trim().length > 0;
 
 /** Each provider's window: closed, waiting for sign-in, or ready. */
 export async function imageStatus(): Promise<Record<ImageProviderId, ProviderState>> {
@@ -149,6 +156,10 @@ export async function openImageProvider(
 ): Promise<void> {
   const route = imageRoute();
   if (route === 'desktop') return openSite(await desktopPlatform(), provider);
+  if (route === 'bridge' && !usesComputerBridge()) {
+    await openPictureSite(provider, 'app');
+    return;
+  }
   if (route === 'web') {
     const response = await fetch(WEB_ROUTE, {
       method: 'POST',
@@ -181,6 +192,9 @@ export async function generateImage(
     image = await makeImage(await desktopPlatform(), provider, prompt, aspect, onProgress);
   } else if (route === 'web') {
     image = await webGenerate(provider, prompt, aspect, onProgress);
+  } else if (!usesComputerBridge()) {
+    // The reader makes it in the Flow / Grok app and adds it; already a data: URL.
+    return requestPictureHandoff(provider, prompt, aspect);
   } else {
     onProgress(
       `Making the picture in ${PROVIDER_LABELS[provider]} on your computer — sign in there if its window asks.`,

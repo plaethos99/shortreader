@@ -228,6 +228,14 @@ pub(crate) async fn get_external_sdcard_path<R: Runtime>(
 }
 
 #[command]
+pub(crate) async fn open_url_with<R: Runtime>(
+    app: AppHandle<R>,
+    payload: OpenUrlWithRequest,
+) -> Result<OpenUrlWithResponse> {
+    app.native_bridge().open_url_with(payload)
+}
+
+#[command]
 pub(crate) async fn open_external_url<R: Runtime>(
     app: AppHandle<R>,
     payload: OpenExternalUrlRequest,

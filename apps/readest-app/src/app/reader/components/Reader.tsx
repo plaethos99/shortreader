@@ -30,6 +30,7 @@ import { ProofreadRulesManager } from './ProofreadRules';
 import { Toast } from '@/components/Toast';
 import AiPanel from '@/app/library/components/AiPanel';
 import AIKeysDialog from '@/components/AIKeysDialog';
+import PictureHandoffDialog from '@/components/PictureHandoffDialog';
 import { getLocale } from '@/utils/misc';
 import { initDayjs } from '@/utils/time';
 import ReaderContent from './ReaderContent';
@@ -169,6 +170,7 @@ const Reader: React.FC<{ ids?: string }> = ({ ids }) => {
         <Toast />
         <AiPanel />
         <AIKeysDialog />
+        <PictureHandoffDialog />
       </Suspense>
     </div>
   ) : (

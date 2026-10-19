@@ -13,13 +13,18 @@ describe('image bridge client (phones)', () => {
   beforeEach(() => {
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
-    useAIConfigStore.setState({ config: { ...DEFAULT_AI_CONFIG } });
+    useAIConfigStore.setState({ config: { ...DEFAULT_AI_CONFIG, phonePictures: 'computer' } });
   });
   afterEach(() => vi.unstubAllGlobals());
 
   test('asks the bridge for a picture from the chosen provider', async () => {
     useAIConfigStore.setState({
-      config: { ...DEFAULT_AI_CONFIG, imageProvider: 'imagine', bridgeToken: 't' },
+      config: {
+        ...DEFAULT_AI_CONFIG,
+        imageProvider: 'imagine',
+        bridgeToken: 't',
+        phonePictures: 'computer',
+      },
     });
     fetchMock.mockResolvedValueOnce({
       ok: true,

@@ -303,6 +303,15 @@ impl<R: Runtime> NativeBridge<R> {
             .run_mobile_plugin("open_external_url", payload)
             .map_err(Into::into)
     }
+
+    pub fn open_url_with(
+        &self,
+        payload: OpenUrlWithRequest,
+    ) -> crate::Result<OpenUrlWithResponse> {
+        self.0
+            .run_mobile_plugin("open_url_with", payload)
+            .map_err(Into::into)
+    }
 }
 
 impl<R: Runtime> NativeBridge<R> {

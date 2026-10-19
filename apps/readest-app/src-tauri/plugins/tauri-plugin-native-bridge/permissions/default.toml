@@ -28,6 +28,7 @@ permissions = [
   "allow-stop-ambient-light-updates",
   "allow-get-external-sdcard-path",
   "allow-open-external-url",
+  "allow-open-url-with",
   "allow-show-lookup-popover",
   "allow-get-lookup-dictionary",
   "allow-clear-lookup-dictionary",
