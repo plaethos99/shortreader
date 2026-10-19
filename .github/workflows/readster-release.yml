@@ -1,0 +1,205 @@
+# Readster builds for Windows, macOS and iOS, published to a GitHub Release.
+#
+# Start a build by pushing a tag:
+#   git tag readster-v0.12.8-1 && git push origin readster-v0.12.8-1
+# (or run it from the Actions tab once this file is on the default branch).
+#
+# Release assets:
+#   Readster_<tag>_x64-setup.exe     Windows installer
+#   Readster_<tag>_x64-portable.exe  Windows, runs without installing
+#   Readster_<tag>_universal.dmg     macOS (Intel and Apple Silicon), not
+#                                    notarized: first open needs
+#                                    `xattr -cr /Applications/Readster.app`
+#   Readster_<tag>_unsigned.ipa      iOS, unsigned: sideload with Sideloadly or
+#                                    AltStore, which sign it with your Apple ID
+#
+# Needs no AI secrets: readers bring their own key in the app.
+name: Release Readster
+
+on:
+  push:
+    tags: ['readster-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and publish (e.g. readster-v0.12.8-1)'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: create the release if it does not exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --prerelease --title "Readster $TAG" \
+              --notes "Windows installer and portable app, a macOS dmg, and an unsigned iOS app for sideloading."
+          fi
+
+  build:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+          - platform: macos
+            os: macos-latest
+            rust_target: aarch64-apple-darwin,x86_64-apple-darwin
+          - platform: ios
+            os: macos-latest
+            rust_target: aarch64-apple-ios
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      NODE_OPTIONS: '--max-old-space-size=8192'
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: initialize git submodules
+        run: git submodule update --init --recursive
+
+      - name: setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: setup node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: copy pdfjs-dist and simplecc-dist to public directory
+        run: pnpm --filter @readest/readest-app setup-vendors
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          key: readster-${{ matrix.platform }}-cargo
+
+      # The app reads these at build time (`pnpm build` loads .env.tauri).
+      - name: write .env.tauri
+        working-directory: apps/readest-app
+        run: |
+          {
+            echo "NEXT_PUBLIC_APP_PLATFORM=tauri"
+            echo "NEXT_PUBLIC_SELF_HOSTED=true"
+          } > .env.tauri
+
+      # ---------- Windows ----------
+
+      - name: build the Windows installer
+        if: matrix.platform == 'windows'
+        working-directory: apps/readest-app
+        run: |
+          pnpm tauri build --target ${{ matrix.rust_target }} --bundles nsis \
+            --config src-tauri/readster.conf.json
+          setup=$(find ../../target/${{ matrix.rust_target }}/release/bundle/nsis -name '*-setup.exe' | head -1)
+          cp "$setup" "../../Readster_${TAG}_x64-setup.exe"
+
+      # Same app with NEXT_PUBLIC_PORTABLE_APP set: keeps its data beside the
+      # exe instead of installing. The web UI is embedded in the exe, so this
+      # one file is the whole app (WebView2 ships with Windows 10 and 11).
+      - name: build the Windows portable app
+        if: matrix.platform == 'windows'
+        working-directory: apps/readest-app
+        run: |
+          echo "NEXT_PUBLIC_PORTABLE_APP=true" >> .env.tauri
+          pnpm tauri build --target ${{ matrix.rust_target }} --no-bundle \
+            --config src-tauri/readster.conf.json
+          cp ../../target/${{ matrix.rust_target }}/release/readest.exe \
+            "../../Readster_${TAG}_x64-portable.exe"
+
+      - name: upload the Windows apps to the release
+        if: matrix.platform == 'windows'
+        run: |
+          gh release upload "$TAG" "Readster_${TAG}_x64-setup.exe" \
+            "Readster_${TAG}_x64-portable.exe" --clobber
+
+      # ---------- macOS ----------
+
+      # No Developer ID, so the app is signed ad-hoc ("-"): Apple Silicon will
+      # not run an unsigned binary at all. It is not notarized, so Gatekeeper
+      # blocks the first open of a downloaded copy until the quarantine flag is
+      # cleared. Upstream's tauri.macos-nonestore.conf.json is left out: it
+      # embeds Readest's Developer ID provisioning profile.
+      - name: build the macOS dmg
+        if: matrix.platform == 'macos'
+        working-directory: apps/readest-app
+        run: |
+          pnpm tauri build --target universal-apple-darwin --bundles dmg \
+            --config src-tauri/readster.conf.json \
+            --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}'
+          dmg=$(find ../../target/universal-apple-darwin/release/bundle/dmg -name '*.dmg' | head -1)
+          cp "$dmg" "../../Readster_${TAG}_universal.dmg"
+
+      - name: upload the macOS dmg to the release
+        if: matrix.platform == 'macos'
+        run: gh release upload "$TAG" "Readster_${TAG}_universal.dmg" --clobber
+
+      # ---------- iOS (unsigned) ----------
+
+      # The Xcode project (src-tauri/gen/apple) is not in the repo, so it is
+      # generated here. The overlay, copied to the iOS platform config Tauri
+      # merges on its own, names the app Readster for both init and build.
+      - name: generate the iOS project
+        if: matrix.platform == 'ios'
+        working-directory: apps/readest-app
+        run: |
+          command -v xcodegen >/dev/null || brew install xcodegen
+          cp src-tauri/readster.conf.json src-tauri/tauri.ios.conf.json
+          rm -rf src-tauri/gen/apple
+          pnpm tauri ios init --ci
+
+      # Signing is switched off through an xcconfig that xcodebuild applies on
+      # top of the project (XCODE_XCCONFIG_FILE), so the archive builds with no
+      # Apple account. The export step after it needs signing and is expected
+      # to fail; the unsigned app is taken from the archive and zipped into an
+      # .ipa, which is all an .ipa is.
+      - name: build the unsigned iOS app
+        if: matrix.platform == 'ios'
+        working-directory: apps/readest-app
+        run: |
+          printf '%s\n' 'CODE_SIGNING_ALLOWED = NO' 'CODE_SIGNING_REQUIRED = NO' \
+            'CODE_SIGN_IDENTITY =' 'CODE_SIGN_ENTITLEMENTS =' 'DEVELOPMENT_TEAM =' \
+            > "$RUNNER_TEMP/nosign.xcconfig"
+          export XCODE_XCCONFIG_FILE="$RUNNER_TEMP/nosign.xcconfig"
+          pnpm tauri ios build --ci --target aarch64 \
+            || echo "::warning::tauri ios build exited non-zero (export needs signing); packaging the archive"
+
+          app=$(find src-tauri/gen/apple "$HOME/Library/Developer/Xcode/Archives" \
+            -type d -path '*.xcarchive/Products/Applications/*.app' 2>/dev/null | head -1)
+          if [ -z "$app" ]; then
+            echo "::error::No archived .app found"
+            find src-tauri/gen/apple -maxdepth 3 -type d || true
+            exit 1
+          fi
+          echo "Packaging $app"
+          rm -rf "$RUNNER_TEMP/Payload" && mkdir "$RUNNER_TEMP/Payload"
+          cp -R "$app" "$RUNNER_TEMP/Payload/"
+          (cd "$RUNNER_TEMP" && zip -qry "$GITHUB_WORKSPACE/Readster_${TAG}_unsigned.ipa" Payload)
+
+      - name: upload the iOS app to the release
+        if: matrix.platform == 'ios'
+        run: gh release upload "$TAG" "Readster_${TAG}_unsigned.ipa" --clobber

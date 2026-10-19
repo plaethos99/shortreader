@@ -1,0 +1,18 @@
+{
+  "name": "shortreader-image-bridge",
+  "version": "0.1.0",
+  "description": "Makes pictures for ShortReader in Google Flow or Grok Imagine by driving a real, signed-in browser window. HTTP for the app, MCP over stdio for agents.",
+  "type": "module",
+  "private": true,
+  "license": "AGPL-3.0",
+  "bin": {
+    "shortreader-image-bridge": "./bridge.mjs"
+  },
+  "scripts": {
+    "start": "node bridge.mjs",
+    "mcp": "node bridge.mjs --mcp"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
