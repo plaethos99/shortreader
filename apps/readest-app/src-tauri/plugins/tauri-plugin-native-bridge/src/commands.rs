@@ -228,6 +228,14 @@ pub(crate) async fn get_external_sdcard_path<R: Runtime>(
 }
 
 #[command]
+pub(crate) async fn picture_window<R: Runtime>(
+    app: AppHandle<R>,
+    payload: PictureWindowRequest,
+) -> Result<PictureWindowResponse> {
+    app.native_bridge().picture_window(payload)
+}
+
+#[command]
 pub(crate) async fn open_url_with<R: Runtime>(
     app: AppHandle<R>,
     payload: OpenUrlWithRequest,

@@ -20,16 +20,26 @@ import {
 import { eventDispatcher } from '@/utils/event';
 
 describe('pictures on a phone (hand-off to the Flow / Grok app)', () => {
+  test('the in-app window is the default on Android', async () => {
+    useAIConfigStore.setState({ config: { ...DEFAULT_AI_CONFIG } });
+    const { usesPictureWindow } = await import('@/services/imageBridge');
+    expect(usesPictureWindow()).toBe(true);
+    platform.os = 'ios';
+    expect(usesPictureWindow()).toBe(false);
+  });
+
   beforeEach(() => {
     invoke.mockReset();
     platform.tauri = true;
     platform.os = 'android';
-    useAIConfigStore.setState({ config: { ...DEFAULT_AI_CONFIG } });
+    useAIConfigStore.setState({ config: { ...DEFAULT_AI_CONFIG, phonePictures: 'handoff' } });
   });
   afterEach(() => vi.unstubAllGlobals());
 
   test('is the default on a phone, and needs no bridge address', () => {
-    useAIConfigStore.setState({ config: { ...DEFAULT_AI_CONFIG, bridgeUrl: '' } });
+    useAIConfigStore.setState({
+      config: { ...DEFAULT_AI_CONFIG, phonePictures: 'handoff', bridgeUrl: '' },
+    });
     expect(isImageGenConfigured()).toBe(true);
   });
 

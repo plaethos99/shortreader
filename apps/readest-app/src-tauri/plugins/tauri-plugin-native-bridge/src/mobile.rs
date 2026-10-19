@@ -312,6 +312,15 @@ impl<R: Runtime> NativeBridge<R> {
             .run_mobile_plugin("open_url_with", payload)
             .map_err(Into::into)
     }
+
+    pub fn picture_window(
+        &self,
+        payload: PictureWindowRequest,
+    ) -> crate::Result<PictureWindowResponse> {
+        self.0
+            .run_mobile_plugin("picture_window", payload)
+            .map_err(Into::into)
+    }
 }
 
 impl<R: Runtime> NativeBridge<R> {

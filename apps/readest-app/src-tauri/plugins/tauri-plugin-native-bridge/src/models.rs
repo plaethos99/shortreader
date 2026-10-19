@@ -320,6 +320,33 @@ pub struct OpenUrlWithResponse {
     pub installed: bool,
 }
 
+/// ShortReader's in-app picture window (Google Flow / Grok Imagine), Android
+/// only. `action`: open | eval | state | tap | type | status | hide | close.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PictureWindowRequest {
+    pub action: String,
+    pub url: Option<String>,
+    pub title: Option<String>,
+    pub expression: Option<String>,
+    pub x: Option<f64>,
+    pub y: Option<f64>,
+    pub viewport_width: Option<f64>,
+    pub text: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PictureWindowResponse {
+    /// `eval`: `{ ok, value }` or `{ ok: false, error }`, as JSON.
+    pub json: Option<String>,
+    /// `state`: the page's address and whether the window is showing.
+    pub url: Option<String>,
+    pub open: Option<bool>,
+    /// `type`: false when some character has no key.
+    pub typed: Option<bool>,
+}
+
 /// Hand a word off to the platform's native dictionary surface.
 ///
 /// On iOS this presents `UIReferenceLibraryViewController` modally

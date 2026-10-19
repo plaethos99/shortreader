@@ -1333,6 +1333,16 @@ class NativeBridgePlugin(private val activity: Activity): Plugin(activity) {
         }
     }
 
+    private val pictureWindow by lazy { PictureWindow(activity) }
+
+    /** ShortReader: Google Flow / Grok Imagine in an in-app window, driven by
+     * services/imagegen/androidWindow.ts. See [PictureWindow]. */
+    @Command
+    fun picture_window(invoke: Invoke) {
+        val args = invoke.parseArgs(PictureWindowArgs::class.java)
+        pictureWindow.handle(invoke, args)
+    }
+
     /**
      * ShortReader picture hand-off: open [OpenUrlWithArgs.url] in a chosen
      * app (Google Flow, Grok) or in the web browser. Resolves

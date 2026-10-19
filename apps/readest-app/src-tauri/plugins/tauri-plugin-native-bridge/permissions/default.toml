@@ -29,6 +29,7 @@ permissions = [
   "allow-get-external-sdcard-path",
   "allow-open-external-url",
   "allow-open-url-with",
+  "allow-picture-window",
   "allow-show-lookup-popover",
   "allow-get-lookup-dictionary",
   "allow-clear-lookup-dictionary",

@@ -22,9 +22,11 @@ export interface AIConfig {
   disableThinking: boolean;
 
   imageProvider: ImageProviderId;
-  // Phones only: make pictures on the phone, in the Flow / Grok app or the
-  // browser (a hand-off), or on a computer through the image bridge.
-  phonePictures: 'phone' | 'computer';
+  // Phones only. phone: automatically, in a Flow / Grok window inside the app
+  // (Android; iOS falls back to the hand-off). handoff: the reader pastes the
+  // prompt in the Flow / Grok app or browser and adds the picture. computer:
+  // a computer's image bridge.
+  phonePictures: 'phone' | 'handoff' | 'computer';
   // The image bridge (tools/image-bridge) that drives Flow / Grok Imagine.
   bridgeUrl: string;
   bridgeToken: string;

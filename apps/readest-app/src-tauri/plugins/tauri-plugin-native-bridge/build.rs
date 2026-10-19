@@ -27,6 +27,7 @@ const COMMANDS: &[&str] = &[
     "get_external_sdcard_path",
     "open_external_url",
     "open_url_with",
+    "picture_window",
     "show_lookup_popover",
     "get_lookup_dictionary",
     "clear_lookup_dictionary",

@@ -9,6 +9,7 @@ import {
 } from '@/services/byok/aiConfig';
 import { TEXT_PROVIDERS, getTextProvider, type TextProviderId } from '@/services/byok/providers';
 import { listModels, testTextModel } from '@/services/llm';
+import { getOSPlatform } from '@/utils/misc';
 import {
   IMAGE_PROVIDER_LABELS,
   imageRoute,
@@ -55,8 +56,10 @@ const AIKeysSettings: React.FC = () => {
   const [textCheck, setTextCheck] = useState<Check>({ state: 'idle' });
   const [bridgeCheck, setBridgeCheck] = useState<Check>({ state: 'idle' });
   const onPhone = imageRoute() === 'bridge';
-  // A phone makes pictures itself (Flow / Grok app hand-off) unless set to a computer.
+  // A phone makes pictures itself (in-app window, or the hand-off) unless set
+  // to a computer.
   const phoneHandoff = onPhone && config.phonePictures !== 'computer';
+  const inAppWindow = onPhone && config.phonePictures === 'phone' && getOSPlatform() === 'android';
 
   const setFor = (
     field: 'apiKeys' | 'models' | 'baseUrls',
@@ -124,9 +127,11 @@ const AIKeysSettings: React.FC = () => {
       await openImageProvider(config.imageProvider);
       setBridgeCheck({
         state: 'ok',
-        message: phoneHandoff
-          ? `Opening ${IMAGE_PROVIDER_LABELS[config.imageProvider]}. Sign in there once.`
-          : `${IMAGE_PROVIDER_LABELS[config.imageProvider]} is opening in its own browser window. Sign in there once; it remembers you.`,
+        message: inAppWindow
+          ? `${IMAGE_PROVIDER_LABELS[config.imageProvider]} is opening in a window inside ShortReader. Sign in there once; pictures are then made by themselves.`
+          : phoneHandoff
+            ? `Opening ${IMAGE_PROVIDER_LABELS[config.imageProvider]}. Sign in there once.`
+            : `${IMAGE_PROVIDER_LABELS[config.imageProvider]} is opening in its own browser window. Sign in there once; it remembers you.`,
       });
     } catch (e) {
       setBridgeCheck({ state: 'error', message: e instanceof Error ? e.message : String(e) });
@@ -226,11 +231,13 @@ const AIKeysSettings: React.FC = () => {
         <BoxedList
           title='Pictures'
           description={
-            phoneHandoff
-              ? 'Mind maps, visuals, comics and feed pictures are made in Google Flow or Grok Imagine. Asking for one copies its prompt and opens the app or the web browser — your choice; make the picture there and add it back.'
-              : onPhone
-                ? 'Mind maps, visuals, comics and feed pictures are made in Google Flow or Grok Imagine, in a browser on a computer on the same network, through the image bridge there.'
-                : 'Mind maps, visuals, comics and feed pictures are made in Google Flow or Grok Imagine. Asking for one opens the site in its own browser window; sign in once and the picture is made by itself.'
+            inAppWindow
+              ? 'Mind maps, visuals, comics and feed pictures are made in Google Flow or Grok Imagine, in a window inside ShortReader. Sign in there once and pictures are made by themselves. (Google may not allow Google sign-in there; Grok works with email or X.)'
+              : phoneHandoff
+                ? 'Mind maps, visuals, comics and feed pictures are made in Google Flow or Grok Imagine. Asking for one copies its prompt and opens the app or the web browser — your choice; make the picture there and add it back.'
+                : onPhone
+                  ? 'Mind maps, visuals, comics and feed pictures are made in Google Flow or Grok Imagine, in a browser on a computer on the same network, through the image bridge there.'
+                  : 'Mind maps, visuals, comics and feed pictures are made in Google Flow or Grok Imagine. Asking for one opens the site in its own browser window; sign in once and the picture is made by itself.'
           }
         >
           <SettingsRow label='Make pictures with'>
@@ -247,10 +254,20 @@ const AIKeysSettings: React.FC = () => {
           {onPhone && (
             <SettingsRow label='Make pictures on'>
               <SettingsSelect
-                value={config.phonePictures}
-                onChange={(e) => update({ phonePictures: e.target.value as 'phone' | 'computer' })}
+                value={
+                  // iOS has no in-app window: "automatically" means the hand-off there.
+                  config.phonePictures === 'phone' && getOSPlatform() !== 'android'
+                    ? 'handoff'
+                    : config.phonePictures
+                }
+                onChange={(e) =>
+                  update({ phonePictures: e.target.value as 'phone' | 'handoff' | 'computer' })
+                }
                 options={[
-                  { value: 'phone', label: 'This phone (app or browser)' },
+                  ...(getOSPlatform() === 'android'
+                    ? [{ value: 'phone', label: 'This phone, automatically' }]
+                    : []),
+                  { value: 'handoff', label: 'This phone, I paste the prompt' },
                   { value: 'computer', label: 'A computer (image bridge)' },
                 ]}
                 ariaLabel='Where pictures are made'
