@@ -114,7 +114,7 @@ async function withTab<T>(
 /** Flow (flow.google.com). `prepare` sets Image, aspect, x1 and types the prompt,
  * returning where the generate button is; `waitForImage` returns the new
  * picture's URL; `startProject` clicks "New project" once signed in. */
-const FLOW_DRIVER = `(() => {
+export const FLOW_DRIVER = `(() => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const radios = () => [...document.querySelectorAll('button[role="radio"]')];
   const pick = (label) => radios().find((b) => b.innerText.trim().split('\\n').pop().trim() === label);
@@ -196,13 +196,17 @@ const FLOW_DRIVER = `(() => {
     throw new Error('Flow did not return an image in time');
   }
 
-  // Signed in, Flow's home page offers "New project": open one. Returns
-  // whether there was one to press (not yet signed in otherwise).
+  // Signed in, Flow's home page offers "New project": a fixed-position card
+  // (so offsetParent is null) whose text is its icon name, a line break, then
+  // the label. Returns where it is, for a native click, or null when it isn't
+  // there (not signed in yet).
   function startProject() {
-    const b = [...document.querySelectorAll('button, a')].filter(visible).find((e) => /^\\s*(\\+\\s*)?new project\\s*$/i.test(e.innerText || e.getAttribute('aria-label') || ''));
-    if (!b) return false;
-    b.click();
-    return true;
+    const onScreen = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; };
+    const b = [...document.querySelectorAll('button, a, [role="button"]')].filter(onScreen).find((e) => /(^|\\n)\\s*new project\\s*$/i.test((e.innerText || '').trim()) || /^new project$/i.test(e.getAttribute('aria-label') || ''));
+    if (!b) return null;
+    b.scrollIntoView({ block: 'center' });
+    const r = b.getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
   }
 
   window.__shortreader = { prepare, waitForImage, startProject };
@@ -213,7 +217,7 @@ const FLOW_DRIVER = `(() => {
  * aspect and empties the prompt box, returning where it is (the prompt is
  * typed through the protocol); `submitAt` is the Submit button; `waitForImage`
  * returns the first new full-size picture as base64 JPEG. */
-const GROK_DRIVER = `(() => {
+export const GROK_DRIVER = `(() => {
   if (window.__srGrok) return;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const visible = (e) => e.offsetParent !== null;
@@ -287,7 +291,7 @@ const GROK_DRIVER = `(() => {
 })();`;
 
 // Signed in when the page has a prompt box and no "Sign in" button.
-const GROK_SIGNED_IN = `(() => {
+export const GROK_SIGNED_IN = `(() => {
   const signIn = [...document.querySelectorAll('a,button')].some((b) => /^\\s*sign (in|up)\\s*$/i.test(b.textContent || ''));
   const box = document.querySelector('textarea, [contenteditable="true"]');
   return !!box && !signIn;
@@ -393,7 +397,14 @@ async function waitUntilReady(
       if (home) {
         const opened = await withTab(platform, home, async (c) => {
           await evaluate(c, FLOW_DRIVER);
-          return evaluate<boolean>(c, 'window.__shortreader.startProject()');
+          const at = await evaluate<{ x: number; y: number } | null>(
+            c,
+            'window.__shortreader.startProject()',
+          );
+          if (!at) return false;
+          await c.send('Page.bringToFront');
+          await clickAt(c, at);
+          return true;
         }).catch(() => false);
         if (opened) {
           onProgress('Opening a Flow project…');

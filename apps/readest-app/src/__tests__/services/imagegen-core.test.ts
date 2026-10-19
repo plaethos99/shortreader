@@ -1,6 +1,14 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { makeImage, siteState, type Platform, type Tab } from '@/services/imagegen/core';
+import {
+  FLOW_DRIVER,
+  GROK_DRIVER,
+  GROK_SIGNED_IN,
+  makeImage,
+  siteState,
+  type Platform,
+  type Tab,
+} from '@/services/imagegen/core';
 
 const tab = (url: string): Tab => ({ type: 'page', url, webSocketDebuggerUrl: `ws://x/${url}` });
 
@@ -40,7 +48,7 @@ describe('image engine', () => {
         [project], // the project it opened
       ],
       (expr) => {
-        if (expr.startsWith('window.__shortreader.startProject')) return true;
+        if (expr.startsWith('window.__shortreader.startProject')) return { x: 5, y: 6 };
         if (expr.startsWith('window.__shortreader.prepare(')) return { x: 10, y: 20 };
         if (expr.startsWith('window.__shortreader.waitForImage'))
           return 'https://flow-content.google/image/new';
@@ -65,7 +73,11 @@ describe('image engine', () => {
     );
     expect(prepare?.tab).toBe(project.url);
     expect(String(prepare?.params?.['expression'])).toContain('"aspect":"4:3"');
-    expect(sent.filter((s) => s.method === 'Input.dispatchMouseEvent')).toHaveLength(3);
+    // A native click on "New project", then one on generate.
+    const clicks = sent.filter((s) => s.method === 'Input.dispatchMouseEvent');
+    expect(clicks).toHaveLength(6);
+    expect(clicks[0]).toMatchObject({ tab: 'https://flow.google.com/', params: { x: 5, y: 6 } });
+    expect(clicks[3]).toMatchObject({ tab: project.url, params: { x: 10, y: 20 } });
     expect(image).toEqual({
       mimeType: 'image/png',
       data: 'bytes-of:https://flow-content.google/image/new',
@@ -109,5 +121,18 @@ describe('image engine', () => {
     await expect(makeImage(platform, 'flow', 'x', '2:1' as '1:1')).rejects.toThrow(/Aspect/);
     await expect(makeImage(platform, 'flow', '  ')).rejects.toThrow(/prompt/);
     expect(platform.launch).not.toHaveBeenCalled();
+  });
+});
+
+describe('page scripts', () => {
+  // They are strings evaluated in the page, so the compiler never sees them:
+  // a stray line break once turned a comment into a syntax error and stopped
+  // every Flow picture.
+  test.each([
+    ['Flow driver', FLOW_DRIVER],
+    ['Grok driver', GROK_DRIVER],
+    ['Grok sign-in check', GROK_SIGNED_IN],
+  ])('%s parses', (_, script) => {
+    expect(() => new Function(script)).not.toThrow();
   });
 });
