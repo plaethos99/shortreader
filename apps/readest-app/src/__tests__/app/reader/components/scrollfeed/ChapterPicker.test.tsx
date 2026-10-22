@@ -30,6 +30,7 @@ const renderPicker = () => {
       streak={0}
       minutes={0}
       listen={<p>Audio story player</p>}
+      readAll={<p>Whole book player</p>}
       {...props}
     />,
   );

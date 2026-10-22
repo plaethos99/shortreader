@@ -49,7 +49,7 @@ describe('generateChapterScript', () => {
   beforeEach(() => generateContent.mockReset());
 
   test('asks for spoken narration in the chosen language and keeps the paragraphs', async () => {
-    generateContent.mockResolvedValueOnce(reply(['First part.', ' ', 'Second part.']));
+    generateContent.mockResolvedValueOnce(reply(['మొదటి భాగం.', ' ', 'రెండవ భాగం.']));
 
     const script = await generateChapterScript(chapter(2, 5000), 'Book', 'story', 'te', 400);
 
@@ -59,7 +59,7 @@ describe('generateChapterScript', () => {
       title: 'Chapter 2',
       style: 'story',
       language: 'te',
-      paragraphs: ['First part.', 'Second part.'],
+      paragraphs: ['మొదటి భాగం.', 'రెండవ భాగం.'],
     });
     const prompt = generateContent.mock.calls[0]![0] as string;
     expect(prompt).toContain('about 400 words');
@@ -97,7 +97,7 @@ describe('generateChapterScript', () => {
   // Telugu costs several times the tokens of English; at DeepSeek's default
   // 8192-token cap a reply was cut off mid-JSON and the chapter failed.
   test('leaves room for long replies in non-Latin scripts', async () => {
-    generateContent.mockResolvedValueOnce(reply(['Part.']));
+    generateContent.mockResolvedValueOnce(reply(['భాగం.']));
 
     await generateChapterScript(chapter(0, 5000), 'Book', 'story', 'te', 400);
 
@@ -108,15 +108,37 @@ describe('generateChapterScript', () => {
     const cutOff = { text: '{"paragraphs": ["Half a sen' };
     generateContent
       .mockResolvedValueOnce(cutOff)
-      .mockResolvedValueOnce(reply(['Retried.']))
+      .mockResolvedValueOnce(reply(['మళ్ళీ.']))
       .mockResolvedValueOnce(cutOff)
       .mockResolvedValueOnce(cutOff);
     const long: FeedChapter = { idx: 0, title: 'Long', text: 'A sentence here. '.repeat(1000) };
 
     const script = await generateChapterScript(long, 'Book', 'story', 'te', 1000);
 
-    expect(script.paragraphs).toEqual(['Retried.']);
+    expect(script.paragraphs).toEqual(['మళ్ళీ.']);
     expect(generateContent).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('generateChapterScript language', () => {
+  beforeEach(() => generateContent.mockReset());
+
+  // Given a long chapter in another language, the narration sometimes came
+  // back in the chapter's language under an English picker.
+  test('retries once, firmly, when the narration is in the wrong language', async () => {
+    generateContent
+      .mockResolvedValueOnce(reply(['Алиса бежит за кроликом.']))
+      .mockResolvedValueOnce(reply(['Alice runs after the rabbit.']));
+
+    const script = await generateChapterScript(chapter(0, 5000), 'Book', 'story', 'en', 400);
+
+    expect(script.paragraphs).toEqual(['Alice runs after the rabbit.']);
+    expect(generateContent.mock.calls[1]![0]).toMatch(
+      /IMPORTANT: your previous script was not in English/,
+    );
+    expect(generateContent.mock.calls[0]![0]).toMatch(
+      /Remember: write every paragraph in English\.$/,
+    );
   });
 });
 

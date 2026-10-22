@@ -17,21 +17,15 @@ import { textConfigProblem, useAIConfigStore } from '@/services/byok/aiConfig';
 import { useBookDataStore } from '@/store/bookDataStore';
 import { eventDispatcher } from '@/utils/event';
 import { useScrollFeedSetting } from '@/app/reader/hooks/useScrollFeedSetting';
-import { isSparse, withCardDefaults } from '@/services/scrollfeed/cards';
 import { extractChapters, type FeedChapter } from '@/services/scrollfeed/chapters';
 import { fillScannedChapter } from '@/services/scrollfeed/ocr';
 import { generateChapterFeed } from '@/services/scrollfeed/generate';
+import { loadUsableFeed, saveUsableFeed } from '@/services/scrollfeed/feedCache';
 import type { FeedStyle } from '@/services/scrollfeed/genre';
 import { feedLanguage } from '@/services/scrollfeed/language';
 import { resumePoint, shouldPrefetchNext } from '@/services/scrollfeed/playback';
-import {
-  loadChapterFeed,
-  loadFeedProgress,
-  saveChapterFeed,
-  saveFeedProgress,
-  saveHighlight,
-} from '@/services/scrollfeed/store';
-import { FEED_FORMAT, type ChapterFeed, type FeedCard } from '@/services/scrollfeed/types';
+import { loadFeedProgress, saveFeedProgress, saveHighlight } from '@/services/scrollfeed/store';
+import type { ChapterFeed, FeedCard } from '@/services/scrollfeed/types';
 import FeedChrome from './FeedChrome';
 import FeedControls from './FeedControls';
 import ScrollFeedCard from './ScrollFeedCard';
@@ -42,6 +36,7 @@ import { useBookAmbience } from '../ambience/useBookAmbience';
 import { useFeedLook } from '../ambience/useFeedLook';
 import { useReadingStats } from '../ambience/useReadingStats';
 import AudioStoryPanel from './AudioStoryPanel';
+import ReadAllPanel from './ReadAllPanel';
 import ChapterEndCard from './ChapterEndCard';
 import ChapterPicker from './ChapterPicker';
 import FeedWindowBar, { FEED_WINDOW_BAR_HEIGHT, useHasFeedWindowBar } from './FeedWindowBar';
@@ -54,30 +49,6 @@ import { useFeedStyle } from './useFeedStyle';
 // by a fresh [] on every render before a feed has loaded.
 const EMPTY_CARDS: FeedCard[] = [];
 const NOT_SET_UP = 'Add your AI key and choose a model to make the curated feed.';
-
-// A sparse feed (a truncated reply, or a PDF chapter cached before line
-// spacing was fixed), one in an older card format, or one made in another
-// style is regenerated rather than served from cache forever.
-const loadUsableFeed = async (
-  bookHash: string,
-  chapter: FeedChapter,
-  style: FeedStyle,
-  language: string,
-) => {
-  const cached = await loadChapterFeed(bookHash, chapter.idx);
-  if (!cached || cached.format !== FEED_FORMAT) return null;
-  // Feeds are stored by chapter index. When the chapter list is worked out
-  // differently (junk pages dropped, headings found), an index can name
-  // another chapter; its title tells.
-  if (cached.title !== chapter.title) return null;
-  if ((cached.style ?? 'story') !== style) return null;
-  if ((cached.language ?? 'en') !== language) return null;
-  return isSparse(cached.cards.length, chapter.text) ? null : withCardDefaults(cached);
-};
-
-const saveUsableFeed = async (bookHash: string, chapter: FeedChapter, feed: ChapterFeed) => {
-  if (!isSparse(feed.cards.length, chapter.text)) await saveChapterFeed(bookHash, feed);
-};
 
 interface ScrollFeedViewProps {
   bookKey: string;
@@ -444,6 +415,22 @@ const ScrollFeedView: React.FC<ScrollFeedViewProps> = ({
           minutes={stats.minutes}
           listen={
             <AudioStoryPanel
+              bookHash={bookHash}
+              bookTitle={bookTitle}
+              chapters={chapters}
+              style={style}
+              language={language}
+              withText={withText}
+              voices={prefs.voices}
+              voiceId={prefs.voiceId}
+              onVoiceChange={prefs.setVoiceId}
+              voiceLang={voiceLang}
+              rate={prefs.rate}
+              onRateChange={prefs.setRate}
+            />
+          }
+          readAll={
+            <ReadAllPanel
               bookHash={bookHash}
               bookTitle={bookTitle}
               chapters={chapters}

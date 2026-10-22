@@ -74,10 +74,7 @@ export const FEED_LANGUAGE_GROUPS = [
 export const feedLanguage = (code: string | undefined): FeedLanguage =>
   FEED_LANGUAGES.find((l) => l.code === code) ?? FEED_LANGUAGES[0]!;
 
-/** What a book defaults to: an Indian-language book keeps its own language;
- * every other book starts in English, whatever it is written in. Metadata
- * carries locales ('te-IN') and odd casing ('HI'). */
-export const resolveDefaultFeedLanguage = (bookLang: string | undefined): string => {
-  const base = (bookLang || '').split(/[-_]/)[0]!.toLowerCase();
-  return feedLanguage(base).group === 'indian' ? base : 'en';
-};
+/** What a book defaults to: English, whatever language the book is written
+ * in — Indian languages included. The reader can pick another language per
+ * book (saved, see useFeedLanguage). */
+export const resolveDefaultFeedLanguage = (_bookLang: string | undefined): string => 'en';

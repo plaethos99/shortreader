@@ -11,6 +11,7 @@ import {
   MdOutlineMenuBook,
   MdPalette,
   MdViewDay,
+  MdRecordVoiceOver,
 } from 'react-icons/md';
 
 import AiInsightsMark from '@/components/AiInsightsMark';
@@ -42,14 +43,17 @@ interface ChapterPickerProps {
   minutes: number;
   /** The Listen section: the book as an audio story. */
   listen: React.ReactNode;
+  /** Read all: every chapter's cards read aloud as one recording. */
+  readAll: React.ReactNode;
 }
 
 type Panel = 'look' | 'highlights' | null;
-type Section = 'read' | 'listen';
+type Section = 'read' | 'listen' | 'readall';
 
 const SECTIONS: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: 'read', label: 'Feed', icon: <MdViewDay size={16} /> },
   { id: 'listen', label: 'Listen', icon: <MdHeadphones size={16} /> },
+  { id: 'readall', label: 'Read all', icon: <MdRecordVoiceOver size={16} /> },
 ];
 
 const ChapterPicker: React.FC<ChapterPickerProps> = ({
@@ -69,6 +73,7 @@ const ChapterPicker: React.FC<ChapterPickerProps> = ({
   streak,
   minutes,
   listen,
+  readAll,
 }) => {
   const [section, setSection] = useState<Section>('read');
   const [panel, setPanel] = useState<Panel>(null);
@@ -130,7 +135,7 @@ const ChapterPicker: React.FC<ChapterPickerProps> = ({
       <div
         role='tablist'
         aria-label='Read or listen'
-        className='bg-base-200/70 eink-bordered mb-4 grid grid-cols-2 gap-1 rounded-full p-1'
+        className='bg-base-200/70 eink-bordered mb-4 grid grid-cols-3 gap-1 rounded-full p-1'
       >
         {SECTIONS.map((s) => (
           <button
@@ -216,6 +221,8 @@ const ChapterPicker: React.FC<ChapterPickerProps> = ({
       {/* Kept mounted while hidden, so the story keeps playing while the
           reader browses the feed's chapter list. */}
       <div hidden={section !== 'listen'}>{listen}</div>
+      {/* Also kept mounted: the whole book keeps playing while browsing. */}
+      <div hidden={section !== 'readall'}>{readAll}</div>
 
       {section === 'read' && (
         <>

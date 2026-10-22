@@ -59,17 +59,14 @@ describe('feed languages', () => {
   });
 
   describe('resolveDefaultFeedLanguage', () => {
-    test("starts from the book's own language when it is one we offer", () => {
-      expect(resolveDefaultFeedLanguage('ta')).toBe('ta');
-      expect(resolveDefaultFeedLanguage('te-IN')).toBe('te');
-      expect(resolveDefaultFeedLanguage('HI')).toBe('hi');
-    });
-
-    // Indian-language books keep their language; everything else starts in
-    // English even when offered, so a Russian novel opens readable.
-    test('starts an international-language book in English', () => {
+    // Every book starts in English, Indian-language books included; the
+    // reader picks another language per book if they want one.
+    test('starts every book in English, whatever it is written in', () => {
+      expect(resolveDefaultFeedLanguage('kn')).toBe('en');
+      expect(resolveDefaultFeedLanguage('te-IN')).toBe('en');
+      expect(resolveDefaultFeedLanguage('HI')).toBe('en');
       expect(resolveDefaultFeedLanguage('ru')).toBe('en');
-      expect(resolveDefaultFeedLanguage('fr-FR')).toBe('en');
+      expect(resolveDefaultFeedLanguage('th')).toBe('en');
     });
 
     test('falls back to English for a language not on the list, or none at all', () => {

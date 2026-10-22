@@ -10,6 +10,7 @@ import {
 } from './cards';
 import type { FeedStyle } from './genre';
 import { feedLanguage } from './language';
+import { isInLanguage } from './script';
 import { renumberCards, segmentChapter } from './segments';
 import { FEED_FORMAT, FeedCard, ChapterFeed } from './types';
 
@@ -111,21 +112,38 @@ evidence, examples and people behind it, in the order the chapter gives them.`,
 // Written in the target language, not translated into it: same one call, same
 // price. The quote is excluded because it is verified character-for-character
 // against the chapter — a translated quote would be words the author never
-// wrote. English is named too: left unsaid, the model writes in the book's
-// language, and a Russian book came back in Russian under an English picker.
-const languageInstruction = (code: string): string => {
+// wrote — so a quote is only kept when the chapter is in the card's language.
+// English is named too: left unsaid, the model writes in the book's language,
+// and a Russian book came back in Russian under an English picker. Given a long
+// chapter in another language the model still drifts back to it, so the rule
+// is repeated after the chapter (languageReminder) and the reply is checked
+// (retellSegment).
+const languageTarget = (code: string): string => {
   const language = feedLanguage(code);
-  const target =
-    language.code === 'en'
-      ? 'English, whatever language the chapter is written in'
-      : `${language.label} (${language.native}),
+  return language.code === 'en'
+    ? 'English, whatever language the chapter is written in'
+    : `${language.label} (${language.native}),
 in that language's own script, as a fluent writer of it would — not as a
 translation of English phrasing`;
-  return `
-Write "story", "title" and "points" in ${target}. Keep the names of people and
-places as the chapter gives them, transliterated naturally. "quote" is the exception: copy it
-from the chapter text exactly as it appears there and never translate it.
+};
+
+const languageInstruction = (code: string): string => `
+Write "label", "title", "story", "points", "example" and "teaser" in ${languageTarget(code)}.
+Keep the names of people and places as the chapter gives them, transliterated
+naturally. "quote" is the exception: copy it from the chapter text exactly as it
+appears there and never translate it — and when the chapter is not written in
+${feedLanguage(code).label}, use "" for every quote.
 `;
+
+const languageReminder = (code: string, insist: boolean): string => {
+  const label = feedLanguage(code).label;
+  return insist
+    ? `
+
+IMPORTANT: your previous answer was not in ${label}. Write every field except "quote" in ${label} — the chapter's own language is only what you read, not what you write.`
+    : `
+
+Remember: write every field except "quote" in ${label}.`;
 };
 
 // The card UI renders LaTeX between $...$ (utils/mathText). One notation keeps
@@ -143,6 +161,7 @@ const buildPrompt = (
   storySoFar: string,
   style: FeedStyle,
   language: string,
+  insistOnLanguage = false,
 ): string => {
   const spec = STYLE_SPECS[style];
   const words = cardWords(chapterText, cardCount);
@@ -183,8 +202,17 @@ Return JSON: {"cards": [{"label": string, "title": string, "story": string, "poi
 
 Chapter: "${chapterTitle}"
 
-${chapterText}`;
+${chapterText}${languageReminder(language, insistOnLanguage)}`;
 };
+
+/** The cards' own words (not quotes) are in the feed's language. */
+const cardsInLanguage = (cards: FeedCard[], teaser: string, language: string): boolean =>
+  isInLanguage(
+    [teaser, ...cards.flatMap((c) => [c.label, c.title, c.story, ...c.points, c.example])]
+      .filter(Boolean)
+      .join(' '),
+    language,
+  );
 
 /** Retell one contiguous stretch of chapter text. Quotes are verified against
  * exactly the text the model was shown, so a segment's cards can only quote
@@ -201,21 +229,46 @@ async function retellSegment(
   const cardCount = targetCardCount(segment);
   if (!cardCount) return { cards: [], teaser: '' };
 
-  let raw: RawFeedCard[] = [];
-  let teaser = '';
-  try {
-    const reply = await chatJson<{ cards?: unknown; teaser?: unknown }>(
-      buildPrompt(chapterTitle, segment, bookTitle, cardCount, storySoFar, style, language),
-      { maxTokens: MAX_REPLY_TOKENS },
-    );
-    raw = Array.isArray(reply.cards) ? (reply.cards as RawFeedCard[]) : [];
-    teaser = typeof reply.teaser === 'string' ? reply.teaser.trim() : '';
-  } catch (e) {
-    // A failed request is an error worth showing; a malformed reply just
-    // yields no cards for this segment (and a retry, see isSparse).
-    if (!(e instanceof SyntaxError)) throw e;
+  const ask = async (insistOnLanguage: boolean) => {
+    let raw: RawFeedCard[] = [];
+    let teaser = '';
+    try {
+      const reply = await chatJson<{ cards?: unknown; teaser?: unknown }>(
+        buildPrompt(
+          chapterTitle,
+          segment,
+          bookTitle,
+          cardCount,
+          storySoFar,
+          style,
+          language,
+          insistOnLanguage,
+        ),
+        { maxTokens: MAX_REPLY_TOKENS },
+      );
+      raw = Array.isArray(reply.cards) ? (reply.cards as RawFeedCard[]) : [];
+      teaser = typeof reply.teaser === 'string' ? reply.teaser.trim() : '';
+    } catch (e) {
+      // A failed request is an error worth showing; a malformed reply just
+      // yields no cards for this segment (and a retry, see isSparse).
+      if (!(e instanceof SyntaxError)) throw e;
+    }
+    return { cards: normalizeCards(raw, chapterIdx, segment), teaser };
+  };
+
+  let { cards, teaser } = await ask(false);
+  // Answered in the chapter's language instead of the feed's: once more, firmly.
+  if (cards.length && !cardsInLanguage(cards, teaser, language)) {
+    const retry = await ask(true);
+    if (retry.cards.length && cardsInLanguage(retry.cards, retry.teaser, language)) {
+      ({ cards, teaser } = retry);
+    }
   }
-  const cards = normalizeCards(raw, chapterIdx, segment);
+  // A quote stays in the chapter's language; on a card in another language it
+  // would be read aloud by the wrong voice. Keep only quotes in the card's.
+  cards = cards.map((card) =>
+    card.quote && !isInLanguage(card.quote, language) ? { ...card, quote: '' } : card,
+  );
   // A story card is bare narrative. The model sometimes adds a heading and
   // bullets that only repeat the paragraph; the prompt alone doesn't stop it.
   return {

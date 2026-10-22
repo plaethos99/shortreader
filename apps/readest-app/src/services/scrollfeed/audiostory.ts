@@ -11,6 +11,7 @@ import { countWords } from './cards';
 import type { FeedChapter } from './chapters';
 import type { FeedStyle } from './genre';
 import { feedLanguage } from './language';
+import { isInLanguage } from './script';
 import { segmentChapter } from './segments';
 
 // Bump when the script shape or prompt changes enough to discard cached ones.
@@ -75,6 +76,7 @@ const buildPrompt = (
   language: string,
   words: number,
   soFar: string,
+  insistOnLanguage = false,
 ): string => {
   const lang = feedLanguage(language);
   const sourceWords = Math.round(countWords(segment) / 10) * 10;
@@ -111,7 +113,17 @@ Carry on from there without restarting or recapping.
 }
 Return JSON: {"paragraphs": string[]}.
 
-${segment}`;
+${segment}${
+  // Repeated after the chapter: given a long chapter in another language,
+  // the model drifts back into it.
+  insistOnLanguage
+    ? `
+
+IMPORTANT: your previous script was not in ${lang.label}. Write every paragraph in ${lang.label} — the chapter's own language is only what you read, not what you write.`
+    : `
+
+Remember: write every paragraph in ${lang.label}.`
+}`;
 };
 
 /** One segment's paragraphs. A reply cut off mid-JSON is retried once, then
@@ -148,16 +160,24 @@ export async function generateChapterScript(
   const paragraphs: string[] = [];
   for (const segment of segments) {
     const share = Math.max(40, Math.round((words * segment.length) / total / 10) * 10);
-    const prompt = buildPrompt(
-      chapter,
-      segment,
-      bookTitle,
-      style,
-      language,
-      share,
-      paragraphs.at(-1) ?? '',
-    );
-    paragraphs.push(...(await scriptSegment(prompt)));
+    const prompt = (insist: boolean) =>
+      buildPrompt(
+        chapter,
+        segment,
+        bookTitle,
+        style,
+        language,
+        share,
+        paragraphs.at(-1) ?? '',
+        insist,
+      );
+    let written = await scriptSegment(prompt(false));
+    // Narrated in the chapter's language instead of the chosen one: once more, firmly.
+    if (written.length && !isInLanguage(written.join(' '), language)) {
+      const retry = await scriptSegment(prompt(true));
+      if (retry.length && isInLanguage(retry.join(' '), language)) written = retry;
+    }
+    paragraphs.push(...written);
   }
   return {
     format: AUDIO_FORMAT,

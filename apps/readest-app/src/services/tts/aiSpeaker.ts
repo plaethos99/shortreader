@@ -19,7 +19,7 @@ const MAX_CHUNK = 500;
 // Chunks kept synthesizing ahead of the one playing (see play()).
 const PREFETCH_AHEAD = 3;
 
-const splitIntoChunks = (text: string): string[] => {
+export const splitIntoChunks = (text: string): string[] => {
   const clean = text.replace(/\s+/g, ' ').trim();
   if (!clean) return [];
   const sentences = clean.match(/[^.!?。！？]+[.!?。！？]*\s*/g) ?? [clean];

@@ -109,7 +109,15 @@ describe('generateChapterFeed', () => {
   // afterwards, so it costs one call either way. The quote is the exception:
   // it is verified against the chapter, so a translated one would be a fake.
   test('asks for the cards in the chosen language and records it on the feed', async () => {
-    generateContent.mockResolvedValueOnce(reply(6));
+    generateContent.mockResolvedValueOnce({
+      text: JSON.stringify({
+        cards: Array.from({ length: 6 }, () => ({
+          story: 'ఆలిస్ తెల్ల కుందేలును వెంబడిస్తుంది.',
+          quote: '',
+          imagePrompt: 'p',
+        })),
+      }),
+    });
 
     const feed = await generateChapterFeed(2, 'Two', chapter, 'Book', 'story', 'te');
 
@@ -129,7 +137,7 @@ describe('generateChapterFeed', () => {
 
     expect(feed.language).toBe('en');
     const prompt = promptOf(0);
-    expect(prompt).toMatch(/Write "story", "title" and "points" in English/);
+    expect(prompt).toMatch(/"story", "points", "example" and "teaser" in English/);
     expect(prompt).not.toContain('Telugu');
   });
 
@@ -261,5 +269,51 @@ describe('generateChapterFeed', () => {
     expect(generateContent).toHaveBeenCalledTimes(2);
     expect(promptOf(0)).not.toContain('Part 19 of the retelling.');
     expect(promptOf(1)).toContain('Part 19 of the retelling.');
+  });
+
+  describe("cards in the feed's language", () => {
+    const replyIn = (story: string, quote = '') => ({
+      text: JSON.stringify({
+        cards: Array.from({ length: 6 }, () => ({ story, quote, imagePrompt: 'p' })),
+      }),
+    });
+
+    test('repeats the language rule after the chapter text', async () => {
+      generateContent.mockResolvedValueOnce(reply(6));
+      await generateChapterFeed(2, 'Two', chapter, 'Book');
+      const prompt = promptOf(0);
+      expect(
+        prompt.trimEnd().endsWith('Remember: write every field except "quote" in English.'),
+      ).toBe(true);
+      expect(prompt).toMatch(/"label", "title", "story", "points", "example" and "teaser"/);
+    });
+
+    // Given a long Russian chapter the model sometimes answered in Russian
+    // under an English picker.
+    test("retries once, firmly, when the cards come back in the chapter's language", async () => {
+      generateContent
+        .mockResolvedValueOnce(replyIn('Алиса бежит за Белым Кроликом.'))
+        .mockResolvedValueOnce(replyIn('Alice runs after the White Rabbit.'));
+
+      const feed = await generateChapterFeed(2, 'Two', chapter, 'Book', 'story', 'en');
+
+      expect(generateContent).toHaveBeenCalledTimes(2);
+      expect(promptOf(1)).toMatch(/IMPORTANT: your previous answer was not in English/);
+      expect(feed.cards[0]!.story).toBe('Alice runs after the White Rabbit.');
+    });
+
+    test("drops quotes that are not in the card's language", async () => {
+      generateContent.mockResolvedValueOnce(
+        replyIn('Alice runs after the White Rabbit.', 'Sentence number 0 is here.'),
+      );
+      const english = await generateChapterFeed(2, 'Two', chapter, 'Book', 'story', 'en');
+      expect(english.cards[0]!.quote).toBe('Sentence number 0 is here.');
+
+      generateContent.mockResolvedValueOnce(
+        replyIn('Алиса бежит за Белым Кроликом.', 'Sentence number 0 is here.'),
+      );
+      const russian = await generateChapterFeed(2, 'Two', chapter, 'Book', 'story', 'ru');
+      expect(russian.cards[0]!.quote).toBe('');
+    });
   });
 });
