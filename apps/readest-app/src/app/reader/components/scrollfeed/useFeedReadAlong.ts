@@ -18,6 +18,10 @@ import { EdgeSpeaker } from '@/services/tts/aiSpeaker';
 import { spokenText } from '@/services/scrollfeed/playback';
 import type { FeedCard } from '@/services/scrollfeed/types';
 
+// Cards whose voice is fetched ahead of the one playing: enough to cover a
+// quick swipe past the next card.
+const PREFETCH_CARDS = 2;
+
 interface UseFeedReadAlongOptions {
   cards: FeedCard[];
   activeCard: number;
@@ -58,8 +62,15 @@ export const useFeedReadAlong = ({
     const speaker = (speakerRef.current ??= new EdgeSpeaker());
     let cancelled = false;
 
-    void speaker
-      .play(spokenText(card), voiceId, lang, rate)
+    const spoken = speaker.play(spokenText(card), voiceId, lang, rate);
+    // Fetch the next cards' voice while this one plays: fetched only when its
+    // card became active, every card started after a silent network round
+    // trip — the long pause after each scroll.
+    for (const ahead of cards.slice(activeCard + 1, activeCard + 1 + PREFETCH_CARDS)) {
+      speaker.prefetch(spokenText(ahead), voiceId, lang, rate);
+    }
+
+    void spoken
       .then(() => {
         if (cancelled) return;
         const next = activeCard + 1;

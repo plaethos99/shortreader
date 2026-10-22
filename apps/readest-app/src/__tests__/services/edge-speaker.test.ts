@@ -111,3 +111,20 @@ describe('EdgeSpeaker prefetch', () => {
     expect(played).toBe(3);
   });
 });
+
+describe('EdgeSpeaker.prefetch', () => {
+  test('asks for the first pieces of a passage without playing anything', () => {
+    createAudioData.mockClear();
+    const speaker = new EdgeSpeaker();
+    speaker.prefetch('First sentence. Second sentence.', 'en-US-AriaNeural', 'en', 1.2);
+    expect(createAudioData).toHaveBeenCalledTimes(1);
+    expect(createAudioData).toHaveBeenCalledWith({
+      lang: 'en',
+      text: 'First sentence. Second sentence.',
+      voice: 'en-US-AriaNeural',
+      rate: 1.2,
+      pitch: 1,
+    });
+    expect(speaker.playing).toBe(false);
+  });
+});

@@ -138,6 +138,21 @@ export class EdgeSpeaker {
     });
   }
 
+  /**
+   * Fetch a passage's first few pieces of audio ahead of playing it, so it
+   * starts at once when its turn comes. Synthesis is cached and in-flight
+   * requests are shared (EdgeSpeechTTS), so playing it later reuses this work
+   * rather than repeating it. Failures are ignored: playback retries.
+   */
+  prefetch(text: string, voiceId?: string, lang = 'en', rate = 1): void {
+    if (!this.#tts) this.#tts = new EdgeSpeechTTS(this.#protocol);
+    const tts = this.#tts;
+    const voice = voiceId || DEFAULT_VOICE;
+    for (const chunk of splitIntoChunks(text).slice(0, PREFETCH_AHEAD)) {
+      tts.createAudioData({ lang, text: chunk, voice, rate, pitch: 1 }).catch(() => {});
+    }
+  }
+
   stop(): void {
     this.#token++;
     if (this.#audio) {
