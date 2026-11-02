@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  countWords,
+  fallsShort,
   isSparse,
   normalizeCards,
+  retoldWords,
   targetCardCount,
   withCardDefaults,
 } from '@/services/scrollfeed/cards';
@@ -15,14 +18,17 @@ const chapterText = `
 `;
 
 describe('targetCardCount', () => {
-  // Sized for ~3:1 condensation, the "30 pages explained in 10" target. Each
-  // card carries roughly 100 words (a short beat plus a 3-6 sentence quote), so
-  // a 30-page chapter (~9000 words) needs ~30 cards to retain a third of it.
-  // An earlier 900-words-per-card setting produced 4 cards for a 1700-word
-  // chapter — about 10:1, which read as highlights rather than a condensation.
-  test('scales with chapter length at about one card per 300 words', () => {
-    expect(targetCardCount('word '.repeat(9000))).toBe(30);
-    expect(targetCardCount('word '.repeat(1700))).toBe(6);
+  // Sized for ~2:1 condensation. Each card carries roughly 100 words, so a
+  // 6000-word chapter needs ~30 cards to retain half of it. At 900 and then 300
+  // words per card, readers felt they were missing the chapter.
+  test('scales with chapter length at about one card per 200 words', () => {
+    expect(targetCardCount('word '.repeat(6000))).toBe(30);
+    expect(targetCardCount('word '.repeat(1700))).toBe(9);
+  });
+
+  test('gives a chapter in a script without spaces its full share', () => {
+    expect(targetCardCount('爱'.repeat(12000))).toBe(30);
+    expect(targetCardCount('อ'.repeat(24000))).toBe(30);
   });
 
   // Three cards minimum made a 150-word page into ~120 words of cards: not a
@@ -31,7 +37,7 @@ describe('targetCardCount', () => {
   test('scales down to a single card for short text and stays finite for huge ones', () => {
     expect(targetCardCount('word '.repeat(50))).toBe(1);
     expect(targetCardCount('word '.repeat(150))).toBe(1);
-    expect(targetCardCount('word '.repeat(600))).toBe(2);
+    expect(targetCardCount('word '.repeat(600))).toBe(3);
     expect(targetCardCount('word '.repeat(500000))).toBe(40);
   });
 
@@ -43,17 +49,52 @@ describe('targetCardCount', () => {
 // A truncated or malformed model response, or a pre-fix PDF chapter whose
 // quotes never matched, yields 0-1 cards for a chapter that should have ~11.
 // Such a result must not be cached as the chapter's feed forever.
+describe('countWords', () => {
+  test('counts words split by spaces, ignoring stray punctuation', () => {
+    expect(countWords('  The lamps — had not been lit.  ')).toBe(6);
+    expect(countWords('   ')).toBe(0);
+    expect(countWords('Алиса бежит за кроликом')).toBe(4);
+  });
+
+  // By spaces alone a Chinese chapter was one word and got one card.
+  test('estimates words for scripts written without spaces', () => {
+    expect(countWords('爱丽丝坐在河边想事情')).toBe(5);
+    expect(countWords('アリスは川辺に')).toBe(4);
+    expect(countWords('อลิซนั่งอยู่ริมแม่น้ำ')).toBe(5);
+  });
+
+  test('adds up a mix of scripts', () => {
+    expect(countWords('Alice 爱丽丝坐')).toBe(3);
+  });
+});
+
+describe('falling short of the words asked for', () => {
+  test('under 60% of the target falls short', () => {
+    expect(fallsShort(59, 100)).toBe(true);
+    expect(fallsShort(60, 100)).toBe(false);
+  });
+
+  test('counts the story and points of each card', () => {
+    expect(
+      retoldWords([
+        { story: 'one two', points: ['three'] },
+        { story: 'four', points: [] },
+      ]),
+    ).toBe(4);
+  });
+});
+
 describe('isSparse', () => {
-  const chapter = 'word '.repeat(3300); // target 11
+  const chapter = 'word '.repeat(3300); // target 17
 
   test('a chapter that yielded under half its target cards is sparse', () => {
     expect(isSparse(0, chapter)).toBe(true);
     expect(isSparse(1, chapter)).toBe(true);
-    expect(isSparse(5, chapter)).toBe(true);
+    expect(isSparse(8, chapter)).toBe(true);
   });
 
   test('a chapter at or above half its target is usable', () => {
-    expect(isSparse(6, chapter)).toBe(false);
+    expect(isSparse(9, chapter)).toBe(false);
     expect(isSparse(11, chapter)).toBe(false);
   });
 

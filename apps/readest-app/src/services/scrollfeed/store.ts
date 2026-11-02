@@ -19,7 +19,7 @@ import type { AudioScript } from './audiostory';
 import type { ReadingStats } from './engagement';
 import { FEED_STYLES, type FeedStyle } from './genre';
 import type { FeedProgress } from './playback';
-import { ChapterFeed } from './types';
+import { ChapterFeed, FEED_FORMAT } from './types';
 
 const DB_NAME = 'readster-scrollfeed';
 // v2 added the progress and prefs stores, v3 the OCR store, v4 highlights,
@@ -94,8 +94,10 @@ export const saveChapterFeed = async (bookHash: string, feed: ChapterFeed): Prom
   await run(FEEDS, 'readwrite', (s) => s.put(feed, feedKey(bookHash, feed.chapterIdx)));
 };
 
-// Images are keyed by card id, scoped by book so two books can't collide.
-const imageKey = (bookHash: string, cardId: string) => `${bookHash}:${cardId}`;
+// Images are keyed by card id, scoped by book so two books can't collide, and
+// by format: a new format renumbers the cards, and a picture made for card 12
+// must not appear on whatever is card 12 now.
+const imageKey = (bookHash: string, cardId: string) => `${bookHash}:${FEED_FORMAT}:${cardId}`;
 
 export const loadCardImage = async (bookHash: string, cardId: string): Promise<Blob | null> => {
   try {

@@ -6,6 +6,7 @@
 import { isTauriAppPlatform } from '@/services/environment';
 
 import type { BookAudio, BookAudioChapter } from './bookAudio';
+import { FEED_FORMAT } from './types';
 
 interface Saved {
   key: string;
@@ -31,6 +32,7 @@ export const recordingKey = (parts: {
   chapters: { idx: number; title: string }[];
 }): string =>
   JSON.stringify([
+    FEED_FORMAT,
     parts.language,
     parts.style,
     parts.voiceId,

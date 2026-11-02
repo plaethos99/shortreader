@@ -1,9 +1,9 @@
 ﻿'use client';
 
-// The Listen section: the whole book as an audio story of about an hour,
+// The Listen section: the whole book as an audio story, about half its length,
 // narrated chapter after chapter. A chapter's script is written when it is
 // first played (cached after), and the next one is written while this one plays.
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MdGraphicEq, MdPause, MdPlayArrow, MdSkipNext, MdSkipPrevious } from 'react-icons/md';
 
 import {
@@ -43,6 +43,9 @@ interface AudioStoryPanelProps {
 }
 
 const minutesOf = (words: number) => Math.max(1, Math.round(words / WORDS_PER_MINUTE));
+
+const lengthOf = (minutes: number) =>
+  minutes < 60 ? `${minutes} min` : `${Math.round(minutes / 6) / 10} hours`;
 
 const AudioStoryPanel: React.FC<AudioStoryPanelProps> = ({
   bookHash,
@@ -90,12 +93,12 @@ const AudioStoryPanel: React.FC<AudioStoryPanelProps> = ({
       if (cached && isUsableScript(cached, listed, style, language)) return cached;
       if (cachedOnly) return null;
       const full = await withText(listed);
-      const words = chapterScriptWords(chapters, listed.idx);
+      const words = chapterScriptWords(listed);
       const written = await generateChapterScript(full, bookTitle, style, language, words);
       if (written.paragraphs.length) await saveAudioScript(bookHash, written);
       return written;
     },
-    [bookHash, bookTitle, chapters, style, language, withText],
+    [bookHash, bookTitle, style, language, withText],
   );
 
   // Held in a ref: reading a scanned chapter's pages updates the chapter list,
@@ -188,16 +191,16 @@ const AudioStoryPanel: React.FC<AudioStoryPanelProps> = ({
     setPlaying(true);
   };
 
-  const totalMinutes = minutesOf(
-    chapters.reduce((sum, _, i) => sum + chapterScriptWords(chapters, i), 0),
-  );
+  // Counting a whole book's words is too slow for every render.
+  const scriptWords = useMemo(() => chapters.map(chapterScriptWords), [chapters]);
+  const totalMinutes = minutesOf(scriptWords.reduce((sum, words) => sum + words, 0));
   const paragraphs = scriptReady ? script!.paragraphs : [];
 
   return (
     <div className='flex flex-col gap-4'>
       <div className='bg-base-200/60 eink-bordered rounded-xl p-4'>
         <p className='text-base-content/60 text-xs uppercase tracking-wide'>
-          Audio story · about {totalMinutes} min
+          Audio story · about {lengthOf(totalMinutes)}
         </p>
         <h3 className='mt-1 truncate text-base font-semibold'>
           {chapter?.title ?? 'Reading book…'}
@@ -282,7 +285,7 @@ const AudioStoryPanel: React.FC<AudioStoryPanelProps> = ({
       </div>
 
       <ul className='flex flex-col gap-1'>
-        {chapters.map((c) => (
+        {chapters.map((c, i) => (
           <li key={c.idx}>
             <button
               type='button'
@@ -294,7 +297,7 @@ const AudioStoryPanel: React.FC<AudioStoryPanelProps> = ({
               <span className='min-w-0 flex-1'>
                 <span className='block truncate text-sm font-medium'>{c.title}</span>
                 <span className='text-base-content/50 text-xs'>
-                  {minutesOf(chapterScriptWords(chapters, c.idx))} min listen
+                  {minutesOf(scriptWords[i] ?? 0)} min listen
                 </span>
               </span>
               {c.idx === chapterIdx && playing && (

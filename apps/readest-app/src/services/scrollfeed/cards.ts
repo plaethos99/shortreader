@@ -15,23 +15,50 @@ export interface RawFeedCard {
 // A card is read on one screen; past this the list stops being key points.
 const MAX_POINTS = 4;
 
-// ~3:1 condensation, the "30 pages explained in 10" target. Each card is a
-// ~100-word paragraph of the retelling, so a third of a 30-page chapter
-// (~9000 words) takes ~30 cards.
+// ~2:1 condensation: the chapter told more tightly, with its scenes, reasoning
+// and voice still there. Each card is a ~100-word paragraph of the retelling,
+// so half of a 30-page chapter (~9000 words) takes ~45 cards.
 //
-// This was 900 words per card, which gave a 1700-word chapter only 4 cards —
-// about 10:1. That reads as highlights, not a condensed chapter.
-const WORDS_PER_CARD = 300;
-export const RETELLING_RATIO = 1 / 3;
+// This was 900 words per card (about 10:1), which reads as highlights, then 300
+// (3:1), which still left readers feeling they had missed something.
+const WORDS_PER_CARD = 200;
+export const RETELLING_RATIO = 1 / 2;
 // One, not three: a 3-card floor turned a 150-word page into ~120 words of
 // cards — a near-copy padded with invented detail, not a retelling.
 const MIN_CARDS = 1;
 const MAX_CARDS = 40;
 
+// Scripts written without spaces between words, and about how many characters
+// make the equivalent of an English word. Counted by spaces, a Chinese chapter
+// was one "word" and got one card; a Thai one got a tenth of its share.
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu;
+const CJK_CHARS_PER_WORD = 2;
+const SOUTHEAST_ASIAN = /[\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/gu;
+const SOUTHEAST_ASIAN_CHARS_PER_WORD = 4;
+
 export const countWords = (text: string): number => {
-  const trimmed = text.trim();
-  return trimmed ? trimmed.split(/\s+/).length : 0;
+  const cjk = text.match(CJK)?.length ?? 0;
+  const southeastAsian = text.match(SOUTHEAST_ASIAN)?.length ?? 0;
+  const spaced = text
+    .replace(CJK, ' ')
+    .replace(SOUTHEAST_ASIAN, ' ')
+    .split(/\s+/)
+    .filter((token) => /[\p{L}\p{N}]/u.test(token)).length;
+  return Math.round(
+    spaced + cjk / CJK_CHARS_PER_WORD + southeastAsian / SOUTHEAST_ASIAN_CHARS_PER_WORD,
+  );
 };
+
+// A reply under this share of the words asked for has left things out. Models
+// differ in how concise they are, and counting cards alone can't see it: six
+// 40-word cards pass as six cards.
+const MIN_COVERAGE = 0.6;
+
+export const fallsShort = (words: number, target: number): boolean => words < target * MIN_COVERAGE;
+
+/** The words a reader gets from these cards, quotes aside. */
+export const retoldWords = (cards: Pick<FeedCard, 'story' | 'points'>[]): number =>
+  countWords(cards.flatMap((card) => [card.story, ...card.points]).join(' '));
 
 export const targetCardCount = (chapterText: string): number => {
   const words = countWords(chapterText);

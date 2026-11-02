@@ -7,7 +7,8 @@ import {
   chapterHeading,
   synthesizeBookAudio,
 } from '@/services/scrollfeed/bookAudio';
-import type { ChapterFeed, FeedCard } from '@/services/scrollfeed/types';
+import { recordingKey } from '@/services/scrollfeed/bookAudioStore';
+import { FEED_FORMAT, type ChapterFeed, type FeedCard } from '@/services/scrollfeed/types';
 
 const card = (story: string) =>
   ({ id: story, title: '', story, points: [], quote: '' }) as unknown as FeedCard;
@@ -15,6 +16,12 @@ const feed = (chapterIdx: number, title: string, stories: string[]): ChapterFeed
   ({ chapterIdx, title, cards: stories.map(card) }) as unknown as ChapterFeed;
 
 describe('Read all: the whole book as one recording', () => {
+  // A saved recording of cards that have since been rewritten must not play.
+  test('a recording is made again when the card format changes', () => {
+    const key = recordingKey({ language: 'en', style: 'story', voiceId: 'v', chapters: [] });
+    expect(JSON.parse(key)[0]).toBe(FEED_FORMAT);
+  });
+
   test('announces each chapter in English when the title can be said', () => {
     expect(chapterHeading(3, 'A Caucus-Race and a Long Tale', 'en')).toBe(
       'Chapter 3. A Caucus-Race and a Long Tale.',

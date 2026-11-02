@@ -24,24 +24,28 @@ const chapter = (idx: number, chars: number): FeedChapter => ({
 
 const reply = (paragraphs: string[]) => ({ text: JSON.stringify({ paragraphs }) });
 
+const prose = (first: string, words = 500) => `${first} ${'word '.repeat(words).trim()}`;
+
 describe('chapterScriptWords', () => {
-  test('splits about an hour of narration across chapters by their length', () => {
-    // A long book: 3 chapters of 300k chars (~60k words each).
-    const chapters = [chapter(0, 300_000), chapter(1, 600_000), chapter(2, 300_000)];
-    const words = chapters.map((_, i) => chapterScriptWords(chapters, i));
-    expect(words[1]).toBe(words[0]! * 2);
-    // ~60 minutes at ~150 words a minute.
-    expect(words.reduce((a, b) => a + b, 0)).toBe(9000);
+  // An hour for a whole book left a long book's chapter a few minutes: 3-15% of
+  // the text.
+  test('keeps half of each chapter, however long the book', () => {
+    expect(chapterScriptWords(chapter(0, 300_000))).toBe(30_000);
+    expect(chapterScriptWords(chapter(1, 6000))).toBe(600);
   });
 
-  test('never pads a short book past half its own length', () => {
-    const chapters = [chapter(0, 6000)]; // ~1200 words
-    expect(chapterScriptWords(chapters, 0)).toBe(500);
+  test('gives a chapter in a script without spaces its full share', () => {
+    const chinese: FeedChapter = { idx: 0, title: 'Chinese', text: '爱'.repeat(10_000) };
+    expect(chapterScriptWords(chinese)).toBe(2500);
   });
 
   test('budgets a scanned chapter by its page count until its text is read', () => {
     const scanned: FeedChapter = { idx: 1, title: 'Scan', text: '', scannedSections: [1, 2, 3] };
-    expect(chapterScriptWords([chapter(0, 300_000), scanned], 1)).toBeGreaterThan(0);
+    expect(chapterScriptWords(scanned)).toBe(500);
+  });
+
+  test('an empty chapter has nothing to narrate', () => {
+    expect(chapterScriptWords({ idx: 0, title: 'Empty', text: '' })).toBe(0);
   });
 });
 
@@ -49,7 +53,7 @@ describe('generateChapterScript', () => {
   beforeEach(() => generateContent.mockReset());
 
   test('asks for spoken narration in the chosen language and keeps the paragraphs', async () => {
-    generateContent.mockResolvedValueOnce(reply(['మొదటి భాగం.', ' ', 'రెండవ భాగం.']));
+    generateContent.mockResolvedValue(reply(['మొదటి భాగం.', ' ', 'రెండవ భాగం.']));
 
     const script = await generateChapterScript(chapter(2, 5000), 'Book', 'story', 'te', 400);
 
@@ -69,20 +73,20 @@ describe('generateChapterScript', () => {
 
   test('narrates a long chapter segment by segment, continuing from the last one', async () => {
     generateContent
-      .mockResolvedValueOnce(reply(['Opening.']))
-      .mockResolvedValueOnce(reply(['Ending.']));
+      .mockResolvedValueOnce(reply([prose('Opening.')]))
+      .mockResolvedValueOnce(reply([prose('Ending.')]));
     const long: FeedChapter = { idx: 0, title: 'Long', text: 'A sentence here. '.repeat(1000) };
 
     const script = await generateChapterScript(long, 'Book', 'ideas', 'en', 1000);
 
-    expect(script.paragraphs).toEqual(['Opening.', 'Ending.']);
+    expect(script.paragraphs).toEqual([prose('Opening.'), prose('Ending.')]);
     expect(generateContent.mock.calls[1]![0]).toContain('Opening.');
   });
 
   // A Russian chapter scripted in English came back as a full translation:
   // 14,867 words against a 2,410-word budget.
   test('asks to condense, not translate, with the ratio spelled out', async () => {
-    generateContent.mockResolvedValueOnce(reply(['Part.']));
+    generateContent.mockResolvedValue(reply(['Part.']));
 
     await generateChapterScript(chapter(0, 10_000), 'Book', 'story', 'en', 400);
 
@@ -94,10 +98,49 @@ describe('generateChapterScript', () => {
     expect(prompt).toMatch(/6 paragraphs of 50-90 words/);
   });
 
+  // Told to summarise dialogue and leave out description, a chapter lost what
+  // made it worth hearing.
+  test('asks to keep scenes, motives and speech', async () => {
+    generateContent.mockResolvedValueOnce(reply([prose('Part.', 400)]));
+
+    await generateChapterScript(chapter(0, 10_000), 'Book', 'story', 'en', 400);
+
+    const prompt = generateContent.mock.calls[0]![0] as string;
+    expect(prompt).toMatch(/every scene, motive and argument/);
+    expect(prompt).toMatch(/play out as speech/);
+    expect(prompt).toMatch(/own point of view and tense/);
+    expect(prompt).not.toMatch(/summarise dialogue/);
+    expect(prompt).not.toMatch(/never more than/);
+    expect(prompt).not.toMatch(/third person/);
+  });
+
+  test('asks again, saying so, when a script is far too short', async () => {
+    generateContent
+      .mockResolvedValueOnce(reply(['Far too short.']))
+      .mockResolvedValueOnce(reply([prose('Full.', 400)]));
+
+    const script = await generateChapterScript(chapter(0, 10_000), 'Book', 'story', 'en', 400);
+
+    expect(generateContent).toHaveBeenCalledTimes(2);
+    expect(generateContent.mock.calls[0]![0]).not.toMatch(/previous script was only/);
+    expect(generateContent.mock.calls[1]![0]).toMatch(/previous script was only about 3 words/);
+    expect(script.paragraphs).toEqual([prose('Full.', 400)]);
+  });
+
+  test('keeps the longer script when asking again gets a shorter one', async () => {
+    generateContent
+      .mockResolvedValueOnce(reply(['Too short, this one.']))
+      .mockResolvedValueOnce(reply(['Shorter.']));
+
+    const script = await generateChapterScript(chapter(0, 10_000), 'Book', 'story', 'en', 400);
+
+    expect(script.paragraphs).toEqual(['Too short, this one.']);
+  });
+
   // Telugu costs several times the tokens of English; at DeepSeek's default
   // 8192-token cap a reply was cut off mid-JSON and the chapter failed.
   test('leaves room for long replies in non-Latin scripts', async () => {
-    generateContent.mockResolvedValueOnce(reply(['భాగం.']));
+    generateContent.mockResolvedValue(reply(['భాగం.']));
 
     await generateChapterScript(chapter(0, 5000), 'Book', 'story', 'te', 400);
 
@@ -106,16 +149,17 @@ describe('generateChapterScript', () => {
 
   test('retries a cut-off reply, then skips that segment rather than failing', async () => {
     const cutOff = { text: '{"paragraphs": ["Half a sen' };
+    const again = 'మళ్ళీ '.repeat(500).trim();
     generateContent
       .mockResolvedValueOnce(cutOff)
-      .mockResolvedValueOnce(reply(['మళ్ళీ.']))
+      .mockResolvedValueOnce(reply([again]))
       .mockResolvedValueOnce(cutOff)
       .mockResolvedValueOnce(cutOff);
     const long: FeedChapter = { idx: 0, title: 'Long', text: 'A sentence here. '.repeat(1000) };
 
     const script = await generateChapterScript(long, 'Book', 'story', 'te', 1000);
 
-    expect(script.paragraphs).toEqual(['మళ్ళీ.']);
+    expect(script.paragraphs).toEqual([again]);
     expect(generateContent).toHaveBeenCalledTimes(4);
   });
 });
@@ -126,13 +170,14 @@ describe('generateChapterScript language', () => {
   // Given a long chapter in another language, the narration sometimes came
   // back in the chapter's language under an English picker.
   test('retries once, firmly, when the narration is in the wrong language', async () => {
+    const english = 'Alice runs after the rabbit. '.repeat(60).trim();
     generateContent
-      .mockResolvedValueOnce(reply(['Алиса бежит за кроликом.']))
-      .mockResolvedValueOnce(reply(['Alice runs after the rabbit.']));
+      .mockResolvedValueOnce(reply(['Алиса бежит за кроликом. '.repeat(60).trim()]))
+      .mockResolvedValueOnce(reply([english]));
 
     const script = await generateChapterScript(chapter(0, 5000), 'Book', 'story', 'en', 400);
 
-    expect(script.paragraphs).toEqual(['Alice runs after the rabbit.']);
+    expect(script.paragraphs).toEqual([english]);
     expect(generateContent.mock.calls[1]![0]).toMatch(
       /IMPORTANT: your previous script was not in English/,
     );

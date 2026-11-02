@@ -13,13 +13,24 @@ vi.mock('@/services/llm', () => ({
 import { generateChapterFeed } from '@/services/scrollfeed/generate';
 import { FEED_FORMAT } from '@/services/scrollfeed/types';
 
-// ~1800 words -> target 6 cards.
+// ~1800 words -> target 9 cards, about 900 words.
 const chapter = `Sentence number 0 is here. ${'filler '.repeat(1800)}`;
 
+// Cards of about 100 words, so six of them reach the chapter's length.
 const reply = (count: number) => ({
   text: JSON.stringify({
     cards: Array.from({ length: count }, (_, i) => ({
-      story: `Part ${i} of the retelling.`,
+      story: `Part ${i} of the retelling. ${'word '.repeat(100).trim()}`,
+      quote: '',
+      imagePrompt: 'p',
+    })),
+  }),
+});
+
+const shortReply = (count: number) => ({
+  text: JSON.stringify({
+    cards: Array.from({ length: count }, (_, i) => ({
+      story: `Part ${i}.`,
       quote: '',
       imagePrompt: 'p',
     })),
@@ -31,20 +42,66 @@ const promptOf = (call: number): string => generateContent.mock.calls[call]![0];
 describe('generateChapterFeed', () => {
   beforeEach(() => generateContent.mockReset());
 
-  test('asks for a retelling that covers the whole chapter, about a third of its length', async () => {
+  test('asks for a retelling that covers the whole chapter, about half its length', async () => {
     generateContent.mockResolvedValueOnce(reply(6));
 
     const feed = await generateChapterFeed(2, 'Two', chapter, 'Book');
 
     expect(feed.format).toBe(FEED_FORMAT);
-    expect(feed.cards.map((c) => c.story)).toContain('Part 5 of the retelling.');
+    expect(feed.cards[5]!.story).toContain('Part 5 of the retelling.');
     const prompt = promptOf(0);
-    expect(prompt).toContain('6 cards');
-    expect(prompt).toMatch(/about 600 words/);
-    // The budget is split per card, with a hard cap: "80-130 words" let the
-    // model run at the top of the range and a chapter came back at 47%.
-    expect(prompt).toMatch(/about 100 words, never more than 120/);
+    expect(prompt).toContain('9 cards');
+    expect(prompt).toMatch(/about 900 words/);
+    expect(prompt).toMatch(/about 100 words/);
+    expect(prompt).not.toMatch(/never more than/);
     expect(prompt).toContain('"story"');
+  });
+
+  // Readers felt they were missing the chapter: told to trim description and
+  // write in the third person, the retelling lost its voice and atmosphere.
+  test('asks to keep the voice, motives and dialogue of the chapter', async () => {
+    generateContent.mockResolvedValueOnce(reply(6));
+
+    await generateChapterFeed(2, 'Two', chapter, 'Book');
+
+    const prompt = promptOf(0);
+    expect(prompt).toMatch(/stays in the first\s+person/);
+    expect(prompt).toMatch(/never\s+drop a scene, a motive or a thought/);
+    expect(prompt).toMatch(/as dialogue/);
+    expect(prompt).not.toMatch(/Trim repetition and\s+description/);
+    expect(prompt).not.toMatch(/most cards need none/);
+  });
+
+  // Six 40-word cards pass as six cards. A concise model has to be told, or it
+  // answers the same way twice.
+  test('asks again, saying so, when the cards are far too short', async () => {
+    generateContent.mockResolvedValueOnce(shortReply(6)).mockResolvedValueOnce(reply(9));
+
+    const feed = await generateChapterFeed(2, 'Two', chapter, 'Book');
+
+    expect(generateContent).toHaveBeenCalledTimes(2);
+    expect(promptOf(0)).not.toMatch(/previous answer was only/);
+    expect(promptOf(1)).toMatch(/previous answer was only about 12 words/);
+    expect(promptOf(1)).toMatch(/full 900 words/);
+    expect(feed.cards).toHaveLength(9);
+  });
+
+  test('keeps the longer answer when asking again gets a shorter one', async () => {
+    generateContent.mockResolvedValueOnce(shortReply(6)).mockResolvedValueOnce(shortReply(5));
+
+    const feed = await generateChapterFeed(2, 'Two', chapter, 'Book');
+
+    expect(feed.cards).toHaveLength(6);
+  });
+
+  test('a chapter in a script without spaces gets its full share', async () => {
+    generateContent.mockResolvedValue(reply(20));
+
+    await generateChapterFeed(2, 'Two', `${'爱丽丝坐在河边。'.repeat(1000)}`, 'Book');
+
+    // 7000 characters, about 3500 words, so about 18 cards and 1750 words.
+    expect(promptOf(0)).toContain('18 cards');
+    expect(promptOf(0)).toMatch(/about 1750 words/);
   });
 
   // The card's substance follows the book: concepts for a technical book,
@@ -63,13 +120,13 @@ describe('generateChapterFeed', () => {
     expect(prompt).toMatch(re);
     expect(prompt).toContain('"title"');
     expect(prompt).toContain('"points"');
-    expect(prompt).not.toMatch(/Third person, present tense/);
+    expect(prompt).not.toMatch(/stays in the first/);
   });
 
   // The story prompt asks for bare narrative; a one-card chapter came back
   // with a label, a title and bullet points repeating the paragraph anyway.
   test('story cards are bare narrative even when the model adds headings and points', async () => {
-    generateContent.mockResolvedValueOnce({
+    generateContent.mockResolvedValue({
       text: JSON.stringify({
         cards: [
           {
@@ -102,14 +159,14 @@ describe('generateChapterFeed', () => {
     const feed = await generateChapterFeed(2, 'Two', chapter, 'Book');
 
     expect(feed.style).toBe('story');
-    expect(promptOf(0)).toMatch(/Third person, present tense/);
+    expect(promptOf(0)).toMatch(/flowing narrative prose/);
   });
 
   // The cards are written in the chosen language rather than translated
   // afterwards, so it costs one call either way. The quote is the exception:
   // it is verified against the chapter, so a translated one would be a fake.
   test('asks for the cards in the chosen language and records it on the feed', async () => {
-    generateContent.mockResolvedValueOnce({
+    generateContent.mockResolvedValue({
       text: JSON.stringify({
         cards: Array.from({ length: 6 }, () => ({
           story: 'ఆలిస్ తెల్ల కుందేలును వెంబడిస్తుంది.',
@@ -177,7 +234,7 @@ describe('generateChapterFeed', () => {
   // The chapter's biggest moment gets a reveal of its own, and the last card
   // leaves a hook for the next chapter.
   test('asks for key-insight cards and a teaser, and keeps them', async () => {
-    generateContent.mockResolvedValueOnce({
+    generateContent.mockResolvedValue({
       text: JSON.stringify({
         cards: [
           { story: 'A.', quote: '', imagePrompt: 'p', key: false },
@@ -201,7 +258,7 @@ describe('generateChapterFeed', () => {
     const teaserReply = (t: string) => ({
       text: JSON.stringify({
         cards: Array.from({ length: 20 }, (_, i) => ({
-          story: `S${i}`,
+          story: `S${i} ${'word '.repeat(100).trim()}`,
           quote: '',
           imagePrompt: 'p',
         })),
@@ -274,7 +331,11 @@ describe('generateChapterFeed', () => {
   describe("cards in the feed's language", () => {
     const replyIn = (story: string, quote = '') => ({
       text: JSON.stringify({
-        cards: Array.from({ length: 6 }, () => ({ story, quote, imagePrompt: 'p' })),
+        cards: Array.from({ length: 6 }, () => ({
+          story: Array(20).fill(story).join(' '),
+          quote,
+          imagePrompt: 'p',
+        })),
       }),
     });
 
@@ -299,7 +360,7 @@ describe('generateChapterFeed', () => {
 
       expect(generateContent).toHaveBeenCalledTimes(2);
       expect(promptOf(1)).toMatch(/IMPORTANT: your previous answer was not in English/);
-      expect(feed.cards[0]!.story).toBe('Alice runs after the White Rabbit.');
+      expect(feed.cards[0]!.story).toContain('Alice runs after the White Rabbit.');
     });
 
     test("drops quotes that are not in the card's language", async () => {

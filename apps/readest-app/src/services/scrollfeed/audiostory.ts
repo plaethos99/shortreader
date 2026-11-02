@@ -1,13 +1,14 @@
 ﻿/**
- * Audio story: the whole book retold as about an hour of narration, in the
- * manner of lystn's audiostories — listened to, not read.
+ * Audio story: the whole book retold as narration — listened to, not read.
  *
- * The hour is split across chapters by their length, and each chapter's
- * script is written on demand, like the feed's cards: a book with hundreds of
- * TOC entries can't be scripted in one pass before the first word is heard.
+ * Each chapter keeps about half its length, and its script is written on
+ * demand, like the feed's cards: a book with hundreds of TOC entries can't be
+ * scripted in one pass before the first word is heard. It used to be an hour
+ * for the whole book, whatever its size, which left a long book's chapter a few
+ * minutes: 3-15% of the text, with its dialogue and description cut.
  */
 import { chatJson } from '../llm';
-import { countWords } from './cards';
+import { countWords, fallsShort } from './cards';
 import type { FeedChapter } from './chapters';
 import type { FeedStyle } from './genre';
 import { feedLanguage } from './language';
@@ -16,16 +17,14 @@ import { segmentChapter } from './segments';
 
 // Bump when the script shape or prompt changes enough to discard cached ones.
 // v2: condensed, not translated (v1 scripts of foreign books ran ~6x long).
-export const AUDIO_FORMAT = 2;
+// v3: half of each chapter, with its voice (v2 was an hour for the whole book).
+export const AUDIO_FORMAT = 3;
 
-const STORY_MINUTES = 60;
+const NARRATION_RATIO = 1 / 2;
 // A narrator's pace: Edge voices at 1x read prose at ~150 words a minute.
 export const WORDS_PER_MINUTE = 150;
-const STORY_WORDS = STORY_MINUTES * WORDS_PER_MINUTE;
-// A short book is condensed, never padded: at most half its own length.
-const CHARS_PER_WORD = 6;
 // A scanned chapter has no text until its pages are read; a page is about this.
-const CHARS_PER_SCANNED_PAGE = 2000;
+const WORDS_PER_SCANNED_PAGE = 330;
 // Half the feed's cut. Fed 24k chars of a Russian chapter, DeepSeek wrote
 // ~2.7x the English budget; at 12k it kept to ~1.2x and the paragraph count.
 const MAX_SEGMENT_CHARS = 12000;
@@ -44,24 +43,20 @@ export interface AudioScript {
   paragraphs: string[];
 }
 
-const chapterChars = (c: FeedChapter): number =>
-  c.text.length || (c.scannedSections?.length ?? 0) * CHARS_PER_SCANNED_PAGE;
-
-/** Words of narration for one chapter: its share of the hour, rounded to 10. */
-export const chapterScriptWords = (chapters: FeedChapter[], idx: number): number => {
-  const total = chapters.reduce((sum, c) => sum + chapterChars(c), 0);
-  const chars = chapterChars(chapters[idx]!);
-  if (!total || !chars) return 0;
-  const words = Math.min((STORY_WORDS * chars) / total, chars / CHARS_PER_WORD / 2);
-  return Math.max(40, Math.round(words / 10) * 10);
+/** Words of narration for one chapter, rounded to 10. */
+export const chapterScriptWords = (chapter: FeedChapter): number => {
+  const words =
+    countWords(chapter.text) || (chapter.scannedSections?.length ?? 0) * WORDS_PER_SCANNED_PAGE;
+  if (!words) return 0;
+  return Math.max(40, Math.round((words * NARRATION_RATIO) / 10) * 10);
 };
 
 // What the narration carries, following the book's feed style.
 const STYLE_TASKS: Record<FeedStyle, string> = {
   story:
-    'Retell it as a story: the key events, decisions and turns of feeling in order, third person, present tense.',
+    "Retell it as a story, in the book's own point of view and tense: every event, decision and turn of feeling in order, with the reasons behind them and the book's own voice, mood and humour.",
   concepts:
-    'Explain its core concepts as a good teacher would aloud: each idea in plain words, why it matters, how it builds on the last. Describe code in words, never read it out.',
+    "Explain its core concepts as a good teacher would aloud: each idea in plain words, the author's reasoning, why it matters, how it builds on the last. Describe code in words, never read it out.",
   techniques:
     "Walk through the techniques and principles it teaches, with the author's reasoning, key stories and how to apply each one.",
   ideas:
@@ -77,6 +72,7 @@ const buildPrompt = (
   words: number,
   soFar: string,
   insistOnLanguage = false,
+  previousWords = 0,
 ): string => {
   const lang = feedLanguage(language);
   const sourceWords = Math.round(countWords(segment) / 10) * 10;
@@ -89,14 +85,14 @@ const buildPrompt = (
 that is read aloud by a voice, chapter by chapter. This is the script for the
 chapter "${chapter.title}".
 
-${STYLE_TASKS[style]} Keep what matters most in the text below.
+${STYLE_TASKS[style]} A listener who hears only this should miss nothing important in the text below.
 
 This is a condensed retelling, not a translation. The text below is about
-${sourceWords} words; the script is about ${words} words — never more than
-${Math.round(words * 1.15)}. That is roughly 1 in ${ratio}: tell what happens and
-what matters, summarise dialogue rather than reproducing it line by line, and
-leave out description and repetition. Write ${Math.max(1, Math.round(words / PARAGRAPH_WORDS))} paragraphs of 50-90 words each,
-exactly 3 sentences per paragraph; a longer paragraph breaks the budget.
+${sourceWords} words; the script is about ${words} words, and a shorter one loses
+the chapter. That is roughly 1 in ${ratio}: tighten sentences and cut true
+repetition, but keep every scene, motive and argument, let the exchanges that
+matter play out as speech, and keep the images and examples the author dwells on.
+Write ${Math.max(1, Math.round(words / PARAGRAPH_WORDS))} paragraphs of 50-90 words each.
 
 It is heard, not read: warm, flowing spoken prose. No headings, lists, markdown, quote marks around whole passages or
 LaTeX — say equations and symbols the way a person would aloud. No commentary
@@ -114,6 +110,12 @@ Carry on from there without restarting or recapping.
 Return JSON: {"paragraphs": string[]}.
 
 ${segment}${
+  previousWords
+    ? `
+
+IMPORTANT: your previous script was only about ${previousWords} words and left too much out. Write the full ${words} words.`
+    : ''
+}${
   // Repeated after the chapter: given a long chapter in another language,
   // the model drifts back into it.
   insistOnLanguage
@@ -160,7 +162,7 @@ export async function generateChapterScript(
   const paragraphs: string[] = [];
   for (const segment of segments) {
     const share = Math.max(40, Math.round((words * segment.length) / total / 10) * 10);
-    const prompt = (insist: boolean) =>
+    const prompt = (insist: boolean, previousWords = 0) =>
       buildPrompt(
         chapter,
         segment,
@@ -170,12 +172,22 @@ export async function generateChapterScript(
         share,
         paragraphs.at(-1) ?? '',
         insist,
+        previousWords,
       );
     let written = await scriptSegment(prompt(false));
     // Narrated in the chapter's language instead of the chosen one: once more, firmly.
     if (written.length && !isInLanguage(written.join(' '), language)) {
       const retry = await scriptSegment(prompt(true));
       if (retry.length && isInLanguage(retry.join(' '), language)) written = retry;
+    }
+    // Complete but short: told so once, and the longer of the two stands. An
+    // empty reply has had its retry.
+    const writtenWords = countWords(written.join(' '));
+    if (written.length && fallsShort(writtenWords, share)) {
+      const retry = await scriptSegment(prompt(false, writtenWords));
+      if (countWords(retry.join(' ')) > writtenWords && isInLanguage(retry.join(' '), language)) {
+        written = retry;
+      }
     }
     paragraphs.push(...written);
   }
