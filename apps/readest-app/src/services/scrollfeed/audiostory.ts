@@ -1,14 +1,14 @@
 ﻿/**
  * Audio story: the whole book retold as narration — listened to, not read.
  *
- * Each chapter keeps about half its length, and its script is written on
- * demand, like the feed's cards: a book with hundreds of TOC entries can't be
+ * Each chapter keeps the feed's share of its length, and its script is written
+ * on demand, like the feed's cards: a book with hundreds of TOC entries can't be
  * scripted in one pass before the first word is heard. It used to be an hour
  * for the whole book, whatever its size, which left a long book's chapter a few
  * minutes: 3-15% of the text, with its dialogue and description cut.
  */
 import { chatJson } from '../llm';
-import { countWords, fallsShort } from './cards';
+import { checkRetelling, countWords, RETELLING_RATIO, retellingCorrection } from './cards';
 import type { FeedChapter } from './chapters';
 import type { FeedStyle } from './genre';
 import { feedLanguage } from './language';
@@ -18,9 +18,9 @@ import { segmentChapter } from './segments';
 // Bump when the script shape or prompt changes enough to discard cached ones.
 // v2: condensed, not translated (v1 scripts of foreign books ran ~6x long).
 // v3: half of each chapter, with its voice (v2 was an hour for the whole book).
-export const AUDIO_FORMAT = 3;
+// v4: told in the narrator's own sentences (v3 read much of the book back out).
+export const AUDIO_FORMAT = 4;
 
-const NARRATION_RATIO = 1 / 2;
 // A narrator's pace: Edge voices at 1x read prose at ~150 words a minute.
 export const WORDS_PER_MINUTE = 150;
 // A scanned chapter has no text until its pages are read; a page is about this.
@@ -48,13 +48,13 @@ export const chapterScriptWords = (chapter: FeedChapter): number => {
   const words =
     countWords(chapter.text) || (chapter.scannedSections?.length ?? 0) * WORDS_PER_SCANNED_PAGE;
   if (!words) return 0;
-  return Math.max(40, Math.round((words * NARRATION_RATIO) / 10) * 10);
+  return Math.max(40, Math.round((words * RETELLING_RATIO) / 10) * 10);
 };
 
 // What the narration carries, following the book's feed style.
 const STYLE_TASKS: Record<FeedStyle, string> = {
   story:
-    "Retell it as a story, in the book's own point of view and tense: every event, decision and turn of feeling in order, with the reasons behind them and the book's own voice, mood and humour.",
+    "Retell it as a story, in the book's own point of view: every event, decision and turn of feeling in order, with the reasons behind them and the book's mood and humour.",
   concepts:
     "Explain its core concepts as a good teacher would aloud: each idea in plain words, the author's reasoning, why it matters, how it builds on the last. Describe code in words, never read it out.",
   techniques:
@@ -72,11 +72,11 @@ const buildPrompt = (
   words: number,
   soFar: string,
   insistOnLanguage = false,
-  previousWords = 0,
+  correction = '',
 ): string => {
   const lang = feedLanguage(language);
   const sourceWords = Math.round(countWords(segment) / 10) * 10;
-  const ratio = Math.max(1, Math.round(sourceWords / words));
+  const ceiling = Math.round((words * 1.25) / 10) * 10;
   const target =
     lang.code === 'en'
       ? 'English, whatever language the chapter is written in'
@@ -87,11 +87,14 @@ chapter "${chapter.title}".
 
 ${STYLE_TASKS[style]} A listener who hears only this should miss nothing important in the text below.
 
-This is a condensed retelling, not a translation. The text below is about
-${sourceWords} words; the script is about ${words} words, and a shorter one loses
-the chapter. That is roughly 1 in ${ratio}: tighten sentences and cut true
-repetition, but keep every scene, motive and argument, let the exchanges that
-matter play out as speech, and keep the images and examples the author dwells on.
+This is a condensed retelling in your own sentences: not a translation, and not
+the book read out. The text below is about
+${sourceWords} words; the script is about ${words} words, never more than ${ceiling}:
+shorter loses the chapter, longer is just the book again. Gather several of the
+book's sentences into one of your own; never copy them, lightly edit them or
+translate them one by one. Keep every scene, motive and argument and the images
+and examples the author dwells on. Report most conversation in narration, and let
+only the line or two that count be heard as speech.
 Write ${Math.max(1, Math.round(words / PARAGRAPH_WORDS))} paragraphs of 50-90 words each.
 
 It is heard, not read: warm, flowing spoken prose. No headings, lists, markdown, quote marks around whole passages or
@@ -109,13 +112,7 @@ Carry on from there without restarting or recapping.
 }
 Return JSON: {"paragraphs": string[]}.
 
-${segment}${
-  previousWords
-    ? `
-
-IMPORTANT: your previous script was only about ${previousWords} words and left too much out. Write the full ${words} words.`
-    : ''
-}${
+${segment}${correction && `\n\n${correction}`}${
   // Repeated after the chapter: given a long chapter in another language,
   // the model drifts back into it.
   insistOnLanguage
@@ -162,7 +159,7 @@ export async function generateChapterScript(
   const paragraphs: string[] = [];
   for (const segment of segments) {
     const share = Math.max(40, Math.round((words * segment.length) / total / 10) * 10);
-    const prompt = (insist: boolean, previousWords = 0) =>
+    const prompt = (insist: boolean, correction = '') =>
       buildPrompt(
         chapter,
         segment,
@@ -172,7 +169,7 @@ export async function generateChapterScript(
         share,
         paragraphs.at(-1) ?? '',
         insist,
-        previousWords,
+        correction,
       );
     let written = await scriptSegment(prompt(false));
     // Narrated in the chapter's language instead of the chosen one: once more, firmly.
@@ -180,12 +177,19 @@ export async function generateChapterScript(
       const retry = await scriptSegment(prompt(true));
       if (retry.length && isInLanguage(retry.join(' '), language)) written = retry;
     }
-    // Complete but short: told so once, and the longer of the two stands. An
-    // empty reply has had its retry.
-    const writtenWords = countWords(written.join(' '));
-    if (written.length && fallsShort(writtenWords, share)) {
-      const retry = await scriptSegment(prompt(false, writtenWords));
-      if (countWords(retry.join(' ')) > writtenWords && isInLanguage(retry.join(' '), language)) {
+    // Complete but too short, too long or copied: told so once, and the closer
+    // of the two stands. An empty reply has had its retry, and a failed retry
+    // doesn't cost the script already in hand.
+    const first = checkRetelling(written.join(' '), segment, share);
+    if (written.length && first.problem) {
+      const correction = retellingCorrection(first, share, 'script');
+      const retry = await scriptSegment(prompt(false, correction)).catch(() => []);
+      const text = retry.join(' ');
+      if (
+        retry.length &&
+        isInLanguage(text, language) &&
+        checkRetelling(text, segment, share).miss < first.miss
+      ) {
         written = retry;
       }
     }

@@ -1,6 +1,6 @@
 ﻿'use client';
 
-// The Listen section: the whole book as an audio story, about half its length,
+// The Listen section: the whole book as an audio story, about 40% of its length,
 // narrated chapter after chapter. A chapter's script is written when it is
 // first played (cached after), and the next one is written while this one plays.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';

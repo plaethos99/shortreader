@@ -15,14 +15,15 @@ export interface RawFeedCard {
 // A card is read on one screen; past this the list stops being key points.
 const MAX_POINTS = 4;
 
-// ~2:1 condensation: the chapter told more tightly, with its scenes, reasoning
-// and voice still there. Each card is a ~100-word paragraph of the retelling,
-// so half of a 30-page chapter (~9000 words) takes ~45 cards.
+// 5:2 condensation: the chapter told anew, with its scenes and reasoning still
+// there. Each card is a ~100-word paragraph of the retelling, so 40% of a
+// 30-page chapter (~9000 words) takes ~36 cards.
 //
 // This was 900 words per card (about 10:1), which reads as highlights, then 300
-// (3:1), which still left readers feeling they had missed something.
-const WORDS_PER_CARD = 200;
-export const RETELLING_RATIO = 1 / 2;
+// (3:1), which still left readers feeling they had missed something, then 200
+// (2:1), which asked so little condensing that the book itself came back.
+const WORDS_PER_CARD = 250;
+export const RETELLING_RATIO = 2 / 5;
 // One, not three: a 3-card floor turned a 150-word page into ~120 words of
 // cards — a near-copy padded with invented detail, not a retelling.
 const MIN_CARDS = 1;
@@ -49,16 +50,88 @@ export const countWords = (text: string): number => {
   );
 };
 
-// A reply under this share of the words asked for has left things out. Models
-// differ in how concise they are, and counting cards alone can't see it: six
-// 40-word cards pass as six cards.
-const MIN_COVERAGE = 0.6;
+// A retelling has to land between two failures. Under MIN_COVERAGE of the words
+// asked for it has left things out: models differ in how concise they are, and
+// counting cards alone can't see it, six 40-word cards pass as six cards. Over
+// MAX_COVERAGE, or with more than MAX_COPIED of it lifted word for word, it is
+// the book handed back, and a translated book can only show up in its length.
+const MIN_COVERAGE = 0.7;
+const MAX_COVERAGE = 1.3;
+const MAX_COPIED = 0.25;
+// This many words in a row came from the book; fewer can be a shared phrase.
+const COPIED_RUN = 6;
+// A title page or an epigraph isn't worth a second call.
+const MIN_CHECKED_WORDS = 150;
 
-export const fallsShort = (words: number, target: number): boolean => words < target * MIN_COVERAGE;
+const matchableWords = (text: string): string[] =>
+  text
+    .toLowerCase()
+    .replace(CJK, ' $& ')
+    .replace(SOUTHEAST_ASIAN, ' $& ')
+    .match(/[\p{L}\p{M}\p{N}]+/gu) ?? [];
+
+/** How much of a retelling sits in runs of words found unchanged in the source. */
+export const copiedShare = (retelling: string, source: string): number => {
+  const words = matchableWords(retelling);
+  if (!words.length) return 0;
+  const sourceWords = matchableWords(source);
+  const runs = new Set<string>();
+  for (let i = 0; i + COPIED_RUN <= sourceWords.length; i++) {
+    runs.add(sourceWords.slice(i, i + COPIED_RUN).join(' '));
+  }
+  let copied = 0;
+  let countedTo = 0;
+  for (let i = 0; i + COPIED_RUN <= words.length; i++) {
+    if (!runs.has(words.slice(i, i + COPIED_RUN).join(' '))) continue;
+    copied += i + COPIED_RUN - Math.max(i, countedTo);
+    countedTo = i + COPIED_RUN;
+  }
+  return copied / words.length;
+};
+
+export interface RetellingCheck {
+  words: number;
+  problem: 'short' | 'long' | 'copied' | null;
+  // How far outside the balance it is, to choose between two attempts.
+  miss: number;
+}
+
+export const checkRetelling = (
+  retelling: string,
+  source: string,
+  target: number,
+): RetellingCheck => {
+  const words = countWords(retelling);
+  if (countWords(source) < MIN_CHECKED_WORDS) return { words, problem: null, miss: 0 };
+  const short = Math.max(0, MIN_COVERAGE - words / target);
+  const long = Math.max(0, words / target - MAX_COVERAGE);
+  const copied = Math.max(0, copiedShare(retelling, source) - MAX_COPIED);
+  const problem = short ? 'short' : copied ? 'copied' : long ? 'long' : null;
+  return { words, problem, miss: short + long + copied };
+};
+
+/** Told once a reply misses: asked the same way, a model answers the same way. */
+export const retellingCorrection = (
+  { words, problem }: RetellingCheck,
+  target: number,
+  reply: 'answer' | 'script',
+): string => {
+  const keep = 'keeping every scene, argument and example the chapter has';
+  if (problem === 'short' && words) {
+    return `IMPORTANT: your previous ${reply} was only about ${words} words and left too much out. Write the full ${target} words in your own sentences, ${keep}.`;
+  }
+  if (problem === 'copied') {
+    return `IMPORTANT: your previous ${reply} copied long stretches of the chapter word for word, which only hands back the book. Retell all of it in your own sentences, in about ${target} words, ${keep}.`;
+  }
+  if (problem === 'long') {
+    return `IMPORTANT: your previous ${reply} ran to about ${words} words, too close to the chapter itself. Retell it in your own sentences, in about ${target} words, ${keep}.`;
+  }
+  return '';
+};
 
 /** The words a reader gets from these cards, quotes aside. */
-export const retoldWords = (cards: Pick<FeedCard, 'story' | 'points'>[]): number =>
-  countWords(cards.flatMap((card) => [card.story, ...card.points]).join(' '));
+export const retoldText = (cards: Pick<FeedCard, 'story' | 'points'>[]): string =>
+  cards.flatMap((card) => [card.story, ...card.points]).join(' ');
 
 export const targetCardCount = (chapterText: string): number => {
   const words = countWords(chapterText);

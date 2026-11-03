@@ -11,8 +11,9 @@ import type { FeedStyle } from './genre';
 
 // Bumped when the card shape or the generation style changes. Cached feeds of
 // another format are regenerated instead of shown (v1 was beat + excerpt; v2
-// kept a third of a chapter and flattened its voice).
-export const FEED_FORMAT = 3;
+// kept a third of a chapter and flattened its voice; v3 kept half and copied
+// much of the book).
+export const FEED_FORMAT = 4;
 
 export interface FeedCard {
   // `${chapterIdx}-${ordinal}` — stable across regeneration of other chapters,

@@ -24,24 +24,24 @@ const chapter = (idx: number, chars: number): FeedChapter => ({
 
 const reply = (paragraphs: string[]) => ({ text: JSON.stringify({ paragraphs }) });
 
-const prose = (first: string, words = 500) => `${first} ${'word '.repeat(words).trim()}`;
+const prose = (first: string, words = 500) => `${first} ${'spoken '.repeat(words).trim()}`;
 
 describe('chapterScriptWords', () => {
   // An hour for a whole book left a long book's chapter a few minutes: 3-15% of
   // the text.
-  test('keeps half of each chapter, however long the book', () => {
-    expect(chapterScriptWords(chapter(0, 300_000))).toBe(30_000);
-    expect(chapterScriptWords(chapter(1, 6000))).toBe(600);
+  test('keeps 40% of each chapter, however long the book', () => {
+    expect(chapterScriptWords(chapter(0, 300_000))).toBe(24_000);
+    expect(chapterScriptWords(chapter(1, 6000))).toBe(480);
   });
 
   test('gives a chapter in a script without spaces its full share', () => {
     const chinese: FeedChapter = { idx: 0, title: 'Chinese', text: '爱'.repeat(10_000) };
-    expect(chapterScriptWords(chinese)).toBe(2500);
+    expect(chapterScriptWords(chinese)).toBe(2000);
   });
 
   test('budgets a scanned chapter by its page count until its text is read', () => {
     const scanned: FeedChapter = { idx: 1, title: 'Scan', text: '', scannedSections: [1, 2, 3] };
-    expect(chapterScriptWords(scanned)).toBe(500);
+    expect(chapterScriptWords(scanned)).toBe(400);
   });
 
   test('an empty chapter has nothing to narrate', () => {
@@ -85,33 +85,76 @@ describe('generateChapterScript', () => {
 
   // A Russian chapter scripted in English came back as a full translation:
   // 14,867 words against a 2,410-word budget.
-  test('asks to condense, not translate, with the ratio spelled out', async () => {
+  test('asks to condense, not translate, with the lengths spelled out', async () => {
     generateContent.mockResolvedValue(reply(['Part.']));
 
     await generateChapterScript(chapter(0, 10_000), 'Book', 'story', 'en', 400);
 
     const prompt = generateContent.mock.calls[0]![0] as string;
     expect(prompt).toMatch(/not a translation/i);
-    // 2000 words of text into 400: one in five, in 6 short paragraphs.
+    // 2000 words of text into 400, in 6 short paragraphs.
     expect(prompt).toContain('2000 words');
-    expect(prompt).toContain('1 in 5');
+    expect(prompt).toContain('never more than 500');
     expect(prompt).toMatch(/6 paragraphs of 50-90 words/);
   });
 
   // Told to summarise dialogue and leave out description, a chapter lost what
-  // made it worth hearing.
-  test('asks to keep scenes, motives and speech', async () => {
+  // made it worth hearing. Told to play its exchanges out, in the book's voice,
+  // the book came back.
+  test("asks to keep scenes and motives in the narrator's own sentences", async () => {
     generateContent.mockResolvedValueOnce(reply([prose('Part.', 400)]));
 
     await generateChapterScript(chapter(0, 10_000), 'Book', 'story', 'en', 400);
 
     const prompt = generateContent.mock.calls[0]![0] as string;
     expect(prompt).toMatch(/every scene, motive and argument/);
-    expect(prompt).toMatch(/play out as speech/);
-    expect(prompt).toMatch(/own point of view and tense/);
+    expect(prompt).toMatch(/in your own sentences/);
+    expect(prompt).toMatch(/not\s+the book read out/);
+    expect(prompt).toMatch(/own point of view/);
+    expect(prompt).not.toMatch(/play out as speech/);
     expect(prompt).not.toMatch(/summarise dialogue/);
-    expect(prompt).not.toMatch(/never more than/);
     expect(prompt).not.toMatch(/third person/);
+  });
+
+  test('asks again, saying so, when a script is about as long as the chapter', async () => {
+    generateContent
+      .mockResolvedValueOnce(reply([prose('Far too long.', 1900)]))
+      .mockResolvedValueOnce(reply([prose('Full.', 400)]));
+
+    const script = await generateChapterScript(chapter(0, 10_000), 'Book', 'story', 'en', 400);
+
+    expect(generateContent.mock.calls[1]![0]).toMatch(/previous script ran to about \d+ words/);
+    expect(script.paragraphs).toEqual([prose('Full.', 400)]);
+  });
+
+  test('asks again, saying so, when a script copies the chapter', async () => {
+    const text = Array.from({ length: 400 }, (_, i) => `Sentence ${i} of the book.`).join(' ');
+    const copied = text.slice(0, 2000);
+    generateContent
+      .mockResolvedValueOnce(reply([copied]))
+      .mockResolvedValueOnce(reply([prose('Told anew.', 400)]));
+
+    const script = await generateChapterScript(
+      { idx: 0, title: 'One', text },
+      'Book',
+      'story',
+      'en',
+      400,
+    );
+
+    expect(generateContent.mock.calls[1]![0]).toMatch(/previous script copied long stretches/);
+    expect(script.paragraphs).toEqual([prose('Told anew.', 400)]);
+  });
+
+  test('keeps the script in hand when asking again fails', async () => {
+    const long = prose('Far too long.', 1900);
+    generateContent
+      .mockResolvedValueOnce(reply([long]))
+      .mockRejectedValueOnce(new Error('OpenRouter 429: rate limited'));
+
+    const script = await generateChapterScript(chapter(0, 10_000), 'Book', 'story', 'en', 400);
+
+    expect(script.paragraphs).toEqual([long]);
   });
 
   test('asks again, saying so, when a script is far too short', async () => {

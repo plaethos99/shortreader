@@ -1,13 +1,14 @@
 import { chatJson } from '../llm';
 import { isTextAIConfigured } from '../byok/aiConfig';
 import {
+  checkRetelling,
   countWords,
-  fallsShort,
   isSparse,
   normalizeCards,
   RawFeedCard,
   RETELLING_RATIO,
-  retoldWords,
+  retellingCorrection,
+  retoldText,
   targetCardCount,
 } from './cards';
 import type { FeedStyle } from './genre';
@@ -34,9 +35,12 @@ const MAX_REPLY_TOKENS = 32768;
 const retellingWords = (text: string): number =>
   Math.max(50, Math.round((countWords(text) * RETELLING_RATIO) / 50) * 50);
 
-// The total split evenly, rounded to 10.
+// The total split evenly, rounded to 10. Given no ceiling a model writes well
+// past it: Circe's Chapter One came back at 47% when asked for 33%.
 const cardWords = (text: string, cardCount: number): number =>
   Math.max(40, Math.round(retellingWords(text) / cardCount / 10) * 10);
+
+const cardWordCeiling = (words: number): number => Math.round((words * 1.25) / 10) * 10;
 
 interface StyleSpec {
   // What the feed is, in one line: "retelling ... as a condensed narrative".
@@ -51,11 +55,11 @@ interface StyleSpec {
 
 const headedFields = (kind: string, labels: string): string => `- "label": ${labels}.
 - "title": the name of this ${kind}, a few words.
-- "story": one paragraph, about WORDS words, explaining it in plain language —
-  what it is, why it matters, how it connects to the previous card — with the
-  author's own reasoning, evidence and examples, the why as well as the what.
-  Present it as the author's teaching ("X argues...", or direct explanation),
-  with no commentary about the chapter or the reader.`;
+- "story": one paragraph, about WORDS words, never more than MAX, explaining it
+  in plain language — what it is, why it matters, how it connects to the
+  previous card — with the author's reasoning, evidence and examples, the why as
+  well as the what. Present it as the author's teaching ("X argues...", or direct
+  explanation), with no commentary about the chapter or the reader.`;
 
 const STYLE_SPECS: Record<FeedStyle, StyleSpec> = {
   story: {
@@ -64,15 +68,16 @@ const STYLE_SPECS: Record<FeedStyle, StyleSpec> = {
 turn of feeling, in the order the chapter gives them, and what makes them
 matter: why people act as they do, what they say to each other at the moments
 that count, what they think and fear, the images and atmosphere the author
-dwells on. Shorten by tightening sentences and cutting true repetition; never
-drop a scene, a motive or a thought to save words.`,
-    fields: `- "story": one paragraph of flowing narrative prose, about WORDS words,
-  that picks up exactly where the previous card left off. Keep the book's own
-  point of view and tense: a book told in the first person stays in the first
-  person. Keep its voice, names, mood, humour and concrete detail, and let the
-  exchanges that matter play out as dialogue instead of reporting them. No
-  commentary about the chapter, the author or the reader, no headings, no lists
-  — it should read like the book itself told more tightly, not a summary of it.
+dwells on. Shorten by retelling, not by deleting; never drop a scene, a motive or
+a thought to save words.`,
+    fields: `- "story": one paragraph of flowing narrative prose, about WORDS words, never
+  more than MAX, that picks up exactly where the previous card left off. Keep the
+  book's own point of view: a book told in the first person stays in the first
+  person. Keep its names, mood, humour and telling detail. Report most
+  conversation in narration, and give only the line or two that count as direct
+  speech. No commentary about the chapter, the author or the reader, no headings,
+  no lists — it should read as the story told anew by a gifted storyteller,
+  neither a summary of it nor the book itself.
 - "label", "title", "example": "". "points": [].`,
     quoteHint: 'that the paragraph leads up to rather than repeats',
     imageHint: 'this moment. Describe the scene, not the text',
@@ -141,15 +146,6 @@ appears there and never translate it — and when the chapter is not written in
 ${feedLanguage(code).label}, use "" for every quote.
 `;
 
-// Told once a reply came back short: asked the same way, a concise model answers
-// the same way.
-const lengthReminder = (previousWords: number, target: number): string =>
-  previousWords
-    ? `
-
-IMPORTANT: your previous answer was only about ${previousWords} words and left too much out. Write the full ${target} words: every scene, argument and example the chapter has.`
-    : '';
-
 const languageReminder = (code: string, insist: boolean): string => {
   const label = feedLanguage(code).label;
   return insist
@@ -177,20 +173,26 @@ const buildPrompt = (
   style: FeedStyle,
   language: string,
   insistOnLanguage = false,
-  previousWords = 0,
+  correction = '',
 ): string => {
   const spec = STYLE_SPECS[style];
   const words = cardWords(chapterText, cardCount);
   return `You are ${spec.task.replace('BOOK', `"${bookTitle}"`)} for a vertical
 scrolling feed: ${cardCount} cards, about ${retellingWords(chapterText)} words in
-total, read start to finish. Reach that length: a shorter answer loses the chapter.
+total, read start to finish. Hold to that length: shorter loses the chapter, and
+longer is just the book again.
 
 Read together, the cards must cover the WHOLE chapter so that someone who reads
 only them misses nothing important, and comes away with what the chapter gives
 its reader, not a list of what is in it: ${spec.coverage}
 
+Write every card in your own sentences, as someone who has taken the chapter in
+and is telling it. Gather several of the book's sentences into one of your own.
+Never copy them, lightly edit them or translate them one by one; apart from a
+brief line of speech at a moment that counts, the book's words belong in "quote".
+
 Each card has these parts:
-${spec.fields.replace('WORDS', String(words))}
+${spec.fields.replace('WORDS', String(words)).replace('MAX', String(cardWordCeiling(words)))}
 - "quote": optional. At a key moment, one short line (under 30 words) copied
   character-for-character from the chapter text below — a contiguous span, not
   paraphrased or stitched together — ${spec.quoteHint}. Aim for about one card
@@ -219,7 +221,7 @@ Return JSON: {"cards": [{"label": string, "title": string, "story": string, "poi
 
 Chapter: "${chapterTitle}"
 
-${chapterText}${lengthReminder(previousWords, retellingWords(chapterText))}${languageReminder(language, insistOnLanguage)}`;
+${chapterText}${correction && `\n\n${correction}`}${languageReminder(language, insistOnLanguage)}`;
 };
 
 /** The cards' own words (not quotes) are in the feed's language. */
@@ -242,7 +244,7 @@ async function retellSegment(
   storySoFar: string,
   style: FeedStyle,
   language: string,
-  previousWords = 0,
+  correction = '',
 ): Promise<{ cards: FeedCard[]; teaser: string }> {
   const cardCount = targetCardCount(segment);
   if (!cardCount) return { cards: [], teaser: '' };
@@ -261,7 +263,7 @@ async function retellSegment(
           style,
           language,
           insistOnLanguage,
-          previousWords,
+          correction,
         ),
         { maxTokens: MAX_REPLY_TOKENS },
       );
@@ -316,7 +318,8 @@ export async function generateChapterFeed(
   // The chapter's hook is the one its last stretch ends on.
   let teaser = '';
   for (const segment of segments) {
-    const retell = (previousWords = 0) =>
+    const target = retellingWords(segment);
+    const retell = (correction = '') =>
       retellSegment(
         chapterIdx,
         chapterTitle,
@@ -325,16 +328,27 @@ export async function generateChapterFeed(
         storySoFar,
         style,
         language,
-        previousWords,
+        correction,
       );
+    const check = (cards: FeedCard[]) => checkRetelling(retoldText(cards), segment, target);
     let result = await retell();
     // One retry: a truncated reply is usually a one-off, and without it the
-    // chapter opens as "nothing could be condensed". A reply that is complete
-    // but short gets told so. The longer of the two stands.
-    const words = retoldWords(result.cards);
-    if (isSparse(result.cards.length, segment) || fallsShort(words, retellingWords(segment))) {
-      const retry = await retell(words);
-      if (retoldWords(retry.cards) > words) result = retry;
+    // chapter opens as "nothing could be condensed". A complete reply that is
+    // too short, too long or copied gets told so. The closer of the two stands,
+    // and a failed retry doesn't cost the cards already in hand.
+    const first = check(result.cards);
+    if (isSparse(result.cards.length, segment) || first.problem) {
+      const retry = await retell(retellingCorrection(first, target, 'answer')).catch((e) => {
+        if (result.cards.length) return null;
+        throw e;
+      });
+      if (retry) {
+        const { miss } = check(retry.cards);
+        const closer = miss < first.miss;
+        if (closer || (miss === first.miss && retry.cards.length > result.cards.length)) {
+          result = retry;
+        }
+      }
     }
     const { cards } = result;
     groups.push(cards);

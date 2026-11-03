@@ -27,8 +27,8 @@
 ShortReader is an open-source ebook reader for Windows, macOS, Android and the
 web. Open a book and choose how to read it: the **original book**, with a full
 reader's tools, or the **curated view**, where every chapter is retold at
-about half its length as a scroll of short cards in your language, keeping its
-scenes, reasoning and voice, illustrated and read aloud.
+about 40% of its length as a scroll of short cards in your language, keeping its
+scenes and reasoning in fresh sentences, illustrated and read aloud.
 
 There is no account and no subscription. **You bring your own AI**: paste a key
 from OpenRouter, OpenAI, Anthropic, Google, xAI, DeepSeek or another service,
@@ -45,7 +45,7 @@ original-book reader has everything Readest has.
 | **Original or curated, per book** | The first time you open a book, choose *Original book* or *Curated view*. The choice is remembered, and you can switch any time. |
 | **Curated view** | Each chapter retold as short cards, with a style that fits the book (story, concepts, techniques, key ideas). Cards are in English by default, whatever the book's language; you can pick from **31 languages**: English, Hindi, Bengali, Telugu, Marathi, Tamil, Gujarati, Kannada, Malayalam, Urdu, Spanish, French, German, Japanese, Chinese, Arabic and more. Quotes stay word for word in the book's language. |
 | **Read-along** | Cards are read aloud with natural Microsoft Edge voices, sentence by sentence, in the card's language. |
-| **Listen** | The whole book as an audio story about half its length, written for the ear, chapter by chapter. |
+| **Listen** | The whole book as an audio story about 40% of its length, written for the ear, chapter by chapter. |
 | **Read all** | Every chapter's curated cards in one place, read aloud as one recording that keeps playing with the phone locked or the window minimized. Chapters are announced and listed; skip them from the app, the lock screen or media keys. |
 | **AI Insights** | Book overview, chapter overviews, key quotes, themes and concepts, plus chat with the book, all with properly formatted answers and math. |
 | **Pictures** | Mind maps, chapter visuals, comic panels and card illustrations, made in **Google Flow** or **Grok Imagine**, your choice. ShortReader opens the site in its own browser window; sign in once and pictures are made by themselves. |

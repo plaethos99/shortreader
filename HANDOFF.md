@@ -15,7 +15,7 @@ ShortReader is an AI ebook reader built on [Readest](https://github.com/readest/
   language, with read-aloud.
 - **AI Insights** — book summary, chapter overviews, quotes, themes, chat with
   the book, conversation prompts.
-- **Listen** — the book as an audio story about half its length.
+- **Listen** — the book as an audio story about 40% of its length.
 - **Pictures** — mind maps, chapter visuals, comic panels and feed pictures,
   made in **Google Flow** or **Grok Imagine** (reader's choice).
 - **Bring your own key** — no AI key is built in. Each reader picks a service

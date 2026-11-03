@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  checkRetelling,
+  copiedShare,
   countWords,
-  fallsShort,
   isSparse,
   normalizeCards,
-  retoldWords,
+  retellingCorrection,
+  retoldText,
   targetCardCount,
   withCardDefaults,
 } from '@/services/scrollfeed/cards';
@@ -18,17 +20,18 @@ const chapterText = `
 `;
 
 describe('targetCardCount', () => {
-  // Sized for ~2:1 condensation. Each card carries roughly 100 words, so a
-  // 6000-word chapter needs ~30 cards to retain half of it. At 900 and then 300
-  // words per card, readers felt they were missing the chapter.
-  test('scales with chapter length at about one card per 200 words', () => {
-    expect(targetCardCount('word '.repeat(6000))).toBe(30);
-    expect(targetCardCount('word '.repeat(1700))).toBe(9);
+  // Sized for 5:2 condensation. Each card carries roughly 100 words, so a
+  // 6000-word chapter needs ~24 cards to retain 40% of it. At 900 and then 300
+  // words per card, readers felt they were missing the chapter; at 200 the book
+  // itself came back.
+  test('scales with chapter length at about one card per 250 words', () => {
+    expect(targetCardCount('word '.repeat(6000))).toBe(24);
+    expect(targetCardCount('word '.repeat(1700))).toBe(7);
   });
 
   test('gives a chapter in a script without spaces its full share', () => {
-    expect(targetCardCount('爱'.repeat(12000))).toBe(30);
-    expect(targetCardCount('อ'.repeat(24000))).toBe(30);
+    expect(targetCardCount('爱'.repeat(12000))).toBe(24);
+    expect(targetCardCount('อ'.repeat(24000))).toBe(24);
   });
 
   // Three cards minimum made a 150-word page into ~120 words of cards: not a
@@ -37,7 +40,7 @@ describe('targetCardCount', () => {
   test('scales down to a single card for short text and stays finite for huge ones', () => {
     expect(targetCardCount('word '.repeat(50))).toBe(1);
     expect(targetCardCount('word '.repeat(150))).toBe(1);
-    expect(targetCardCount('word '.repeat(600))).toBe(3);
+    expect(targetCardCount('word '.repeat(600))).toBe(2);
     expect(targetCardCount('word '.repeat(500000))).toBe(40);
   });
 
@@ -68,33 +71,119 @@ describe('countWords', () => {
   });
 });
 
-describe('falling short of the words asked for', () => {
-  test('under 60% of the target falls short', () => {
-    expect(fallsShort(59, 100)).toBe(true);
-    expect(fallsShort(60, 100)).toBe(false);
+// The opening of Alice's Adventures in Wonderland (public domain).
+const ALICE = `Alice was beginning to get very tired of sitting by her sister on the
+  bank, and of having nothing to do: once or twice she had peeped into the book
+  her sister was reading, but it had no pictures or conversations in it, "and what
+  is the use of a book," thought Alice "without pictures or conversations?" So she
+  was considering in her own mind (as well as she could, for the hot day made her
+  feel very sleepy and stupid), whether the pleasure of making a daisy-chain would
+  be worth the trouble of getting up and picking the daisies, when suddenly a White
+  Rabbit with pink eyes ran close by her.`;
+
+describe('copiedShare', () => {
+  test('a tight edit of the book is nearly all copied', () => {
+    const edit = `Alice was beginning to get very tired of sitting by her sister on the
+      bank: she had peeped into the book her sister was reading, but it had no pictures
+      or conversations in it. So she was considering whether the pleasure of making a
+      daisy-chain would be worth the trouble of getting up and picking the daisies, when
+      suddenly a White Rabbit with pink eyes ran close by her.`;
+    expect(copiedShare(edit, ALICE)).toBeGreaterThan(0.8);
   });
 
-  test('counts the story and points of each card', () => {
+  test('a retelling with one line of the book in it is not', () => {
+    const retelling = `Bored on the riverbank beside her sister, Alice glanced at the book in
+      the older girl's hands and found it dull, all words. "And what is the use of a book,"
+      she wondered, "without pictures or conversations?" The heat was making her drowsy,
+      and she was idly weighing up a daisy-chain against the effort of standing, when a
+      white rabbit with pink eyes dashed past.`;
+    expect(copiedShare(retelling, ALICE)).toBeLessThan(0.25);
+  });
+
+  test('sees copying in scripts without spaces, ignoring case and punctuation', () => {
+    expect(copiedShare('爱丽丝坐在河边，想事情。', '爱丽丝坐在河边想事情')).toBe(1);
+    expect(copiedShare('ALICE WAS, BEGINNING TO GET VERY', ALICE)).toBe(1);
+  });
+
+  test('has nothing to count in an empty retelling', () => {
+    expect(copiedShare('', ALICE)).toBe(0);
+  });
+});
+
+describe('checkRetelling', () => {
+  // 2000 words, in words the retellings below don't use.
+  const source = 'chapter '.repeat(2000);
+  const told = (words: number) => 'retold '.repeat(words);
+
+  test('a retelling near the words asked for, in its own words, is fine', () => {
+    expect(checkRetelling(told(800), source, 800)).toEqual({ words: 800, problem: null, miss: 0 });
+    expect(checkRetelling(told(560), source, 800).problem).toBeNull();
+    expect(checkRetelling(told(1040), source, 800).problem).toBeNull();
+  });
+
+  test('under 70% of the words asked for is too short', () => {
+    expect(checkRetelling(told(559), source, 800).problem).toBe('short');
+  });
+
+  // A translated book shares no words with its source: only its length shows it.
+  test('over 130% of the words asked for is too long', () => {
+    expect(checkRetelling(told(1041), source, 800).problem).toBe('long');
+  });
+
+  test('a retelling lifted from the source is copied, at any length', () => {
+    expect(checkRetelling('chapter '.repeat(800), source, 800).problem).toBe('copied');
+  });
+
+  test('a closer attempt misses by less', () => {
+    const far = checkRetelling(told(100), source, 800);
+    const near = checkRetelling(told(500), source, 800);
+    expect(near.miss).toBeLessThan(far.miss);
+  });
+
+  // An epigraph retold word for word is fine, and not worth paying for twice.
+  test('leaves a very short source alone', () => {
+    expect(checkRetelling(ALICE, ALICE, 50)).toMatchObject({ problem: null, miss: 0 });
+  });
+});
+
+describe('retellingCorrection', () => {
+  test('says what was wrong with the reply', () => {
+    const check = (problem: 'short' | 'long' | 'copied', words: number) =>
+      retellingCorrection({ words, problem, miss: 1 }, 800, 'answer');
+    expect(check('short', 12)).toMatch(/previous answer was only about 12 words/);
+    expect(check('short', 12)).toMatch(/full 800 words/);
+    expect(check('copied', 800)).toMatch(/copied long stretches/);
+    expect(check('long', 1500)).toMatch(/ran to about 1500 words/);
+  });
+
+  test('has nothing to say about a good reply or an empty one', () => {
+    expect(retellingCorrection({ words: 800, problem: null, miss: 0 }, 800, 'script')).toBe('');
+    expect(retellingCorrection({ words: 0, problem: 'short', miss: 1 }, 800, 'script')).toBe('');
+  });
+});
+
+describe('retoldText', () => {
+  test('joins the story and points of each card', () => {
     expect(
-      retoldWords([
+      retoldText([
         { story: 'one two', points: ['three'] },
         { story: 'four', points: [] },
       ]),
-    ).toBe(4);
+    ).toBe('one two three four');
   });
 });
 
 describe('isSparse', () => {
-  const chapter = 'word '.repeat(3300); // target 17
+  const chapter = 'word '.repeat(3300); // target 13
 
   test('a chapter that yielded under half its target cards is sparse', () => {
     expect(isSparse(0, chapter)).toBe(true);
     expect(isSparse(1, chapter)).toBe(true);
-    expect(isSparse(8, chapter)).toBe(true);
+    expect(isSparse(6, chapter)).toBe(true);
   });
 
   test('a chapter at or above half its target is usable', () => {
-    expect(isSparse(9, chapter)).toBe(false);
+    expect(isSparse(7, chapter)).toBe(false);
     expect(isSparse(11, chapter)).toBe(false);
   });
 
