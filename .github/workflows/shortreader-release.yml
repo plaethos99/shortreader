@@ -174,33 +174,23 @@ jobs:
           rm -rf src-tauri/gen/apple
           pnpm tauri ios init --ci
 
-      # Signing is switched off through an xcconfig that xcodebuild applies on
-      # top of the project (XCODE_XCCONFIG_FILE), so the archive builds with no
-      # Apple account. The export step after it needs signing and is expected
-      # to fail; the unsigned app is taken from the archive and zipped into an
-      # .ipa, which is all an .ipa is.
+      # --no-sign archives with signing switched off on the xcodebuild command
+      # line (CODE_SIGNING_ALLOWED=NO ...), so no Apple account is needed, and
+      # zips the unsigned app into an .ipa. An xcconfig through
+      # XCODE_XCCONFIG_FILE does not work: the CLI runs xcodebuild with a fixed
+      # environment, so Xcode never sees the variable and asks for an account.
       - name: build the unsigned iOS app
         if: matrix.platform == 'ios'
         working-directory: apps/readest-app
         run: |
-          printf '%s\n' 'CODE_SIGNING_ALLOWED = NO' 'CODE_SIGNING_REQUIRED = NO' \
-            'CODE_SIGN_IDENTITY =' 'CODE_SIGN_ENTITLEMENTS =' 'DEVELOPMENT_TEAM =' \
-            > "$RUNNER_TEMP/nosign.xcconfig"
-          export XCODE_XCCONFIG_FILE="$RUNNER_TEMP/nosign.xcconfig"
-          pnpm tauri ios build --ci --target aarch64 \
-            || echo "::warning::tauri ios build exited non-zero (export needs signing); packaging the archive"
-
-          app=$(find src-tauri/gen/apple "$HOME/Library/Developer/Xcode/Archives" \
-            -type d -path '*.xcarchive/Products/Applications/*.app' 2>/dev/null | head -1)
-          if [ -z "$app" ]; then
-            echo "::error::No archived .app found"
-            find src-tauri/gen/apple -maxdepth 3 -type d || true
+          pnpm tauri ios build --ci --target aarch64 --no-sign
+          ipa=$(find src-tauri/gen/apple/build -name '*.ipa' | head -1)
+          if [ -z "$ipa" ]; then
+            echo "::error::No .ipa found"
+            find src-tauri/gen/apple/build -maxdepth 3 || true
             exit 1
           fi
-          echo "Packaging $app"
-          rm -rf "$RUNNER_TEMP/Payload" && mkdir "$RUNNER_TEMP/Payload"
-          cp -R "$app" "$RUNNER_TEMP/Payload/"
-          (cd "$RUNNER_TEMP" && zip -qry "$GITHUB_WORKSPACE/ShortReader_${TAG}_unsigned.ipa" Payload)
+          cp "$ipa" "$GITHUB_WORKSPACE/ShortReader_${TAG}_unsigned.ipa"
 
       - name: upload the iOS app to the release
         if: matrix.platform == 'ios'
