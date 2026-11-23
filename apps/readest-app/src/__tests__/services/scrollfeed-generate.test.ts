@@ -13,10 +13,10 @@ vi.mock('@/services/llm', () => ({
 import { generateChapterFeed } from '@/services/scrollfeed/generate';
 import { FEED_FORMAT } from '@/services/scrollfeed/types';
 
-// ~1800 words -> target 7 cards, about 700 words.
+// ~1800 words -> target 11 cards, about 1100 words.
 const chapter = `Sentence number 0 is here. ${'filler '.repeat(1800)}`;
 
-// Cards of about 100 words, so six of them reach the chapter's length.
+// Cards of about 100 words, so eleven of them reach the chapter's share.
 const reply = (count: number) => ({
   text: JSON.stringify({
     cards: Array.from({ length: count }, (_, i) => ({
@@ -50,16 +50,16 @@ describe('generateChapterFeed', () => {
     generateContent.mockReset();
   });
 
-  test('asks for a retelling that covers the whole chapter, about 40% of its length', async () => {
-    generateContent.mockResolvedValueOnce(reply(6));
+  test('asks for a retelling that covers the whole chapter, about 60% of its length', async () => {
+    generateContent.mockResolvedValueOnce(reply(11));
 
     const feed = await generateChapterFeed(2, 'Two', chapter, 'Book');
 
     expect(feed.format).toBe(FEED_FORMAT);
     expect(feed.cards[5]!.story).toContain('Part 5 of the retelling.');
     const prompt = promptOf(0);
-    expect(prompt).toContain('7 cards');
-    expect(prompt).toMatch(/about 700 words/);
+    expect(prompt).toContain('11 cards');
+    expect(prompt).toMatch(/about 1100 words/);
     expect(prompt).toMatch(/about 100 words, never\s+more than 130/);
     expect(prompt).toContain('"story"');
   });
@@ -68,7 +68,7 @@ describe('generateChapterFeed', () => {
   // dialogue played out, models handed the book back. Told to trim description
   // and write in the third person, the retelling had lost what made it matter.
   test("asks for the whole chapter in the model's own sentences", async () => {
-    generateContent.mockResolvedValueOnce(reply(6));
+    generateContent.mockResolvedValueOnce(reply(11));
 
     await generateChapterFeed(2, 'Two', chapter, 'Book');
 
@@ -85,15 +85,15 @@ describe('generateChapterFeed', () => {
   // Six 40-word cards pass as six cards. A concise model has to be told, or it
   // answers the same way twice.
   test('asks again, saying so, when the cards are far too short', async () => {
-    generateContent.mockResolvedValueOnce(shortReply(6)).mockResolvedValueOnce(reply(7));
+    generateContent.mockResolvedValueOnce(shortReply(6)).mockResolvedValueOnce(reply(11));
 
     const feed = await generateChapterFeed(2, 'Two', chapter, 'Book');
 
     expect(generateContent).toHaveBeenCalledTimes(2);
     expect(promptOf(0)).not.toMatch(/previous answer was only/);
     expect(promptOf(1)).toMatch(/previous answer was only about 12 words/);
-    expect(promptOf(1)).toMatch(/full 700 words/);
-    expect(feed.cards).toHaveLength(7);
+    expect(promptOf(1)).toMatch(/full 1100 words/);
+    expect(feed.cards).toHaveLength(11);
   });
 
   test('keeps the longer answer when asking again gets a shorter one', async () => {
@@ -107,12 +107,12 @@ describe('generateChapterFeed', () => {
   // A translated chapter shares no words with its source, so its length is
   // what gives it away.
   test('asks again, saying so, when the answer is about as long as the chapter', async () => {
-    generateContent.mockResolvedValueOnce(reply(17)).mockResolvedValueOnce(reply(7));
+    generateContent.mockResolvedValueOnce(reply(17)).mockResolvedValueOnce(reply(11));
 
     const feed = await generateChapterFeed(2, 'Two', chapter, 'Book');
 
     expect(promptOf(1)).toMatch(/previous answer ran to about \d+ words/);
-    expect(feed.cards).toHaveLength(7);
+    expect(feed.cards).toHaveLength(11);
   });
 
   test('asks again, saying so, when the answer copies the chapter', async () => {
@@ -122,8 +122,8 @@ describe('generateChapterFeed', () => {
       text: JSON.stringify({ cards: [{ story, quote: '', imagePrompt: 'p' }] }),
     });
     generateContent
-      .mockResolvedValueOnce(copy(sentences.slice(0, 320).join(' ')))
-      .mockResolvedValueOnce(copy('Told anew. '.repeat(800)));
+      .mockResolvedValueOnce(copy(sentences.slice(0, 480).join(' ')))
+      .mockResolvedValueOnce(copy('Told anew. '.repeat(1200)));
 
     const feed = await generateChapterFeed(2, 'Two', book, 'Book');
 
@@ -137,7 +137,7 @@ describe('generateChapterFeed', () => {
     const book = Array.from({ length: 800 }, (_, i) => `Sentence ${i} of the book.`).join(' ');
     generateContent.mockResolvedValueOnce({
       text: JSON.stringify({
-        cards: Array.from({ length: 16 }, () => ({
+        cards: Array.from({ length: 24 }, () => ({
           story: 'Told anew. '.repeat(50),
           quote: 'Sentence 1 of the book. Sentence 2 of the book.',
           imagePrompt: 'p',
@@ -166,9 +166,9 @@ describe('generateChapterFeed', () => {
 
     await generateChapterFeed(2, 'Two', `${'爱丽丝坐在河边。'.repeat(1000)}`, 'Book');
 
-    // 7000 characters, about 3500 words, so 14 cards and 1400 words.
-    expect(promptOf(0)).toContain('14 cards');
-    expect(promptOf(0)).toMatch(/about 1400 words/);
+    // 7000 characters, about 3500 words, so 21 cards and 2100 words.
+    expect(promptOf(0)).toContain('21 cards');
+    expect(promptOf(0)).toMatch(/about 2100 words/);
   });
 
   // The card's substance follows the book: concepts for a technical book,
@@ -324,7 +324,7 @@ describe('generateChapterFeed', () => {
   test("a long chapter's teaser comes from its last segment", async () => {
     const teaserReply = (t: string) => ({
       text: JSON.stringify({
-        cards: Array.from({ length: 14 }, (_, i) => ({
+        cards: Array.from({ length: 22 }, (_, i) => ({
           story: `S${i} ${'word '.repeat(100).trim()}`,
           quote: '',
           imagePrompt: 'p',
@@ -375,7 +375,7 @@ describe('generateChapterFeed', () => {
   });
 
   test('does not retry a segment that filled its target', async () => {
-    generateContent.mockResolvedValueOnce(reply(6));
+    generateContent.mockResolvedValueOnce(reply(11));
 
     await generateChapterFeed(2, 'Two', chapter, 'Book');
 
@@ -386,19 +386,19 @@ describe('generateChapterFeed', () => {
   // where the story left off, or the seam reads as a restart.
   test('hands each later segment the end of the retelling so far', async () => {
     const long = 'A sentence of the chapter. '.repeat(1500); // 40.5k chars -> 2 segments
-    generateContent.mockResolvedValue(reply(14));
+    generateContent.mockResolvedValue(reply(22));
 
     await generateChapterFeed(2, 'Two', long, 'Book');
 
     expect(generateContent).toHaveBeenCalledTimes(2);
-    expect(promptOf(0)).not.toContain('Part 13 of the retelling.');
-    expect(promptOf(1)).toContain('Part 13 of the retelling.');
+    expect(promptOf(0)).not.toContain('Part 21 of the retelling.');
+    expect(promptOf(1)).toContain('Part 21 of the retelling.');
   });
 
   describe("cards in the feed's language", () => {
     const replyIn = (story: string, quote = '') => ({
       text: JSON.stringify({
-        cards: Array.from({ length: 6 }, () => ({
+        cards: Array.from({ length: 11 }, () => ({
           story: Array(20).fill(story).join(' '),
           quote,
           imagePrompt: 'p',

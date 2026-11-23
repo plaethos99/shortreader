@@ -29,19 +29,19 @@ const prose = (first: string, words = 500) => `${first} ${'spoken '.repeat(words
 describe('chapterScriptWords', () => {
   // An hour for a whole book left a long book's chapter a few minutes: 3-15% of
   // the text.
-  test('keeps 40% of each chapter, however long the book', () => {
-    expect(chapterScriptWords(chapter(0, 300_000))).toBe(24_000);
-    expect(chapterScriptWords(chapter(1, 6000))).toBe(480);
+  test('keeps 60% of each chapter, however long the book', () => {
+    expect(chapterScriptWords(chapter(0, 300_000))).toBe(36_000);
+    expect(chapterScriptWords(chapter(1, 6000))).toBe(720);
   });
 
   test('gives a chapter in a script without spaces its full share', () => {
     const chinese: FeedChapter = { idx: 0, title: 'Chinese', text: '爱'.repeat(10_000) };
-    expect(chapterScriptWords(chinese)).toBe(2000);
+    expect(chapterScriptWords(chinese)).toBe(3000);
   });
 
   test('budgets a scanned chapter by its page count until its text is read', () => {
     const scanned: FeedChapter = { idx: 1, title: 'Scan', text: '', scannedSections: [1, 2, 3] };
-    expect(chapterScriptWords(scanned)).toBe(400);
+    expect(chapterScriptWords(scanned)).toBe(590);
   });
 
   test('an empty chapter has nothing to narrate', () => {

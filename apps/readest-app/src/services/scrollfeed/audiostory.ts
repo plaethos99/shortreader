@@ -19,7 +19,8 @@ import { segmentChapter } from './segments';
 // v2: condensed, not translated (v1 scripts of foreign books ran ~6x long).
 // v3: half of each chapter, with its voice (v2 was an hour for the whole book).
 // v4: told in the narrator's own sentences (v3 read much of the book back out).
-export const AUDIO_FORMAT = 4;
+// v5: 60% of each chapter, up from 40%.
+export const AUDIO_FORMAT = 5;
 
 // A narrator's pace: Edge voices at 1x read prose at ~150 words a minute.
 export const WORDS_PER_MINUTE = 150;

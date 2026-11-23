@@ -15,15 +15,17 @@ export interface RawFeedCard {
 // A card is read on one screen; past this the list stops being key points.
 const MAX_POINTS = 4;
 
-// 5:2 condensation: the chapter told anew, with its scenes and reasoning still
-// there. Each card is a ~100-word paragraph of the retelling, so 40% of a
-// 30-page chapter (~9000 words) takes ~36 cards.
+// 5:3 retelling: the chapter told anew, with its scenes and reasoning still
+// there. Each card is a ~100-word paragraph of the retelling, so 60% of a
+// 30-page chapter (~9000 words) takes ~53 cards.
 //
 // This was 900 words per card (about 10:1), which reads as highlights, then 300
 // (3:1), which still left readers feeling they had missed something, then 200
-// (2:1), which asked so little condensing that the book itself came back.
-const WORDS_PER_CARD = 250;
-export const RETELLING_RATIO = 2 / 5;
+// (2:1), which asked so little condensing that the book itself came back, then
+// 250 at 2:5, which the reader asked to raise to 3:5 once retellings were
+// checked for copying.
+const WORDS_PER_CARD = 170;
+export const RETELLING_RATIO = 3 / 5;
 // One, not three: a 3-card floor turned a 150-word page into ~120 words of
 // cards — a near-copy padded with invented detail, not a retelling.
 const MIN_CARDS = 1;

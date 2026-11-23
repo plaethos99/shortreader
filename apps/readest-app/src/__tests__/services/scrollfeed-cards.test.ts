@@ -20,18 +20,18 @@ const chapterText = `
 `;
 
 describe('targetCardCount', () => {
-  // Sized for 5:2 condensation. Each card carries roughly 100 words, so a
-  // 6000-word chapter needs ~24 cards to retain 40% of it. At 900 and then 300
+  // Sized for 5:3 retelling. Each card carries roughly 100 words, so a
+  // 6000-word chapter needs ~35 cards to retain 60% of it. At 900 and then 300
   // words per card, readers felt they were missing the chapter; at 200 the book
-  // itself came back.
-  test('scales with chapter length at about one card per 250 words', () => {
-    expect(targetCardCount('word '.repeat(6000))).toBe(24);
-    expect(targetCardCount('word '.repeat(1700))).toBe(7);
+  // itself came back, before retellings were checked for copying.
+  test('scales with chapter length at about one card per 170 words', () => {
+    expect(targetCardCount('word '.repeat(6000))).toBe(35);
+    expect(targetCardCount('word '.repeat(1700))).toBe(10);
   });
 
   test('gives a chapter in a script without spaces its full share', () => {
-    expect(targetCardCount('爱'.repeat(12000))).toBe(24);
-    expect(targetCardCount('อ'.repeat(24000))).toBe(24);
+    expect(targetCardCount('爱'.repeat(12000))).toBe(35);
+    expect(targetCardCount('อ'.repeat(24000))).toBe(35);
   });
 
   // Three cards minimum made a 150-word page into ~120 words of cards: not a
@@ -40,7 +40,7 @@ describe('targetCardCount', () => {
   test('scales down to a single card for short text and stays finite for huge ones', () => {
     expect(targetCardCount('word '.repeat(50))).toBe(1);
     expect(targetCardCount('word '.repeat(150))).toBe(1);
-    expect(targetCardCount('word '.repeat(600))).toBe(2);
+    expect(targetCardCount('word '.repeat(600))).toBe(4);
     expect(targetCardCount('word '.repeat(500000))).toBe(40);
   });
 
@@ -174,7 +174,7 @@ describe('retoldText', () => {
 });
 
 describe('isSparse', () => {
-  const chapter = 'word '.repeat(3300); // target 13
+  const chapter = 'word '.repeat(2200); // target 13
 
   test('a chapter that yielded under half its target cards is sparse', () => {
     expect(isSparse(0, chapter)).toBe(true);
